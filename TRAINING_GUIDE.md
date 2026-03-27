@@ -205,7 +205,7 @@ For production customer support environments, we recommend:
 
 1. **Use Few-Shot Strategy** (this document)
 2. **Set temperature=0.0** (deterministic)
-3. **Run validation test** before deployment: `python test_improved_training.py`
+3. **Run validation eval** before deployment: `python evals/test_improved_training.py`
 4. **Monitor gradients**: EASY should be highest, HARD lowest
 5. **Add fallback**: If JSON parsing fails, return neutral response
 
@@ -255,5 +255,5 @@ The environment is **production-ready** with these prompting strategies in place
 ---
 
 **Last Updated**: After Chain-of-Thought experiment
-**Test File**: `test_improved_training.py` (reference implementation)
+**Reference Eval**: `evals/test_improved_training.py`
 **Recommended Model**: `llama-3.3-70b-versatile` (Groq)

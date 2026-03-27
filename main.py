@@ -214,9 +214,13 @@ Documentation:
   ENVIRONMENT_SETUP.md   - Environment configuration
 
 Tests:
-  test_improved_training.py    - Validation test
-  test_gradient_penalty.py     - Difficulty gradient test
-  test_temperature_corrected.py - Temperature effect demo
+    tests/test_environment_mock.py - Contract and API smoke checks
+    tests/test_groq_integration.py - End-to-end provider integration
+
+Evaluations:
+    evals/test_improved_training.py    - Prompting quality evaluation
+    evals/test_gradient_penalty.py     - Difficulty gradient inspection
+    evals/test_temperature_corrected.py - Temperature effect demo
 """)
 
 

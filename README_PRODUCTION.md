@@ -349,9 +349,10 @@ python -m venv .venv
 pip install -r requirements.txt
 
 # Run tests
-python test_groq_integration.py            # Full baseline (dataset sweep per task)
-python test_difficulty_levels.py           # Single ticket EASY/MEDIUM/HARD
-python test_difficulty_comprehensive.py    # 10 tickets × 3 levels
+python tests/test_environment_mock.py      # Contract smoke tests
+python tests/test_groq_integration.py      # Full baseline (dataset sweep per task)
+python evals/test_difficulty_levels.py     # Single ticket EASY/MEDIUM/HARD
+python evals/test_difficulty_comprehensive.py  # 10 tickets × 3 levels
 ```
 
 ### Docker Deployment
@@ -444,9 +445,14 @@ customer_support_env/
     └── client.py          # Python client library
 
 tests/
-├── test_groq_integration.py             # Full integration test
-├── test_difficulty_levels.py            # Single ticket
-├── test_difficulty_comprehensive.py     # 10 tickets
+├── test_environment_mock.py             # Contract smoke tests
+└── test_groq_integration.py             # Full integration test
+
+evals/
+├── test_difficulty_levels.py            # Single ticket evaluation
+├── test_difficulty_comprehensive.py     # 10-ticket evaluation
+├── test_improved_training.py            # Prompting evaluation
+└── ...
 
 Dockerfile                  # Production container
 requirements.txt            # Python dependencies

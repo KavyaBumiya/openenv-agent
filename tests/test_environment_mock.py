@@ -3,6 +3,12 @@
 
 import json
 import os
+import sys
+
+# Allow running this script directly from tests/ while importing project modules.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 print("=" * 60)
 print("TESTING CUSTOMER SUPPORT ENVIRONMENT (Mock Mode)")
@@ -121,7 +127,7 @@ except Exception as e:
 print("\n[TEST 5] Baseline Structure")
 try:
     baseline_path = os.path.join(
-        os.path.dirname(__file__),
+        os.path.dirname(os.path.dirname(__file__)),
         "customer_support_env",
         "baseline.py",
     )
@@ -142,4 +148,4 @@ print("ALL CORE TESTS PASSED")
 print("=" * 60)
 print("\nTo run the full baseline with Groq:")
 print("1. Set GROQ_API_KEY in your environment")
-print("2. Run: python test_groq_integration.py")
+print("2. Run: python tests/test_groq_integration.py")

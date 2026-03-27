@@ -5,6 +5,11 @@ import os
 import sys
 from groq import Groq
 
+# Allow running this script directly from tests/ while importing project modules.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 # ========== CONFIGURE API KEY ==========
 # Get from environment variable (secure approach)
 api_key = os.getenv("GROQ_API_KEY")

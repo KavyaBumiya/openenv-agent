@@ -113,9 +113,14 @@ customer_support_env/
 └── openenv_compat.py     # OpenEnv interface
 
 tests/
-├── test_groq_integration.py
+├── test_environment_mock.py
+└── test_groq_integration.py
+
+evals/
 ├── test_difficulty_levels.py
-└── test_difficulty_comprehensive.py
+├── test_difficulty_comprehensive.py
+├── test_improved_training.py
+└── ...
 
 Dockerfile                 # Production container
 ```

@@ -117,16 +117,16 @@ Problem solved: Variation present ✅
 
 ## Files Updated
 
-### 1. test_improved_training.py
+### 1. evals/test_improved_training.py
 ✅ Updated with correct temperatures:
-- Line 111: `temperature=0.1` (EASY)
-- Line 171: `temperature=0.5` (MEDIUM)
-- Line 228: `temperature=0.7` (HARD)
+- EASY: `temperature=0.1`
+- MEDIUM: `temperature=0.5`
+- HARD: `temperature=0.7`
 
-### 2. test_temperature_corrected.py (NEW)
+### 2. evals/test_temperature_corrected.py (NEW)
 ✅ Reference implementation showing proper setup
 
-### 3. test_groq_variability.py (NEW)
+### 3. evals/test_groq_variability.py (NEW)
 ✅ Demonstrates temperature effect on consistency
 
 ## How to Use
@@ -135,7 +135,7 @@ Problem solved: Variation present ✅
 
 ```bash
 # Corrected test with variability
-python test_improved_training.py
+python evals/test_improved_training.py
 
 # Expected output:
 # EASY:   84.0%  (high, mostly consistent)
@@ -149,10 +149,10 @@ Run the same ticket multiple times:
 
 ```bash
 # Before fix: Identical scores
-python test_gradient_penalty.py  # Run twice, get same rewards
+python evals/test_gradient_penalty.py  # Run twice, get same rewards
 
 # After fix: Different scores
-python test_temperature_corrected.py  # Run twice, different variation
+python evals/test_temperature_corrected.py  # Run twice, different variation
 ```
 
 ## Environment Configuration Checklist
@@ -196,8 +196,8 @@ By adjusting temperature for each task type, you get:
 ---
 
 **Changes Made:**
-- `test_improved_training.py`: Temperature 0.0 → 0.1/0.5/0.7
-- New tests: `test_temperature_corrected.py`, `test_groq_variability.py`
+- `evals/test_improved_training.py`: Temperature 0.0 → 0.1/0.5/0.7
+- New evals: `evals/test_temperature_corrected.py`, `evals/test_groq_variability.py`
 - Documentation: This guide + inline code comments
 
 **Status:** 🟢 Environment correctly configured and ready for deployment
