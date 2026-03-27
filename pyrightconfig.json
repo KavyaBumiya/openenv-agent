@@ -1,0 +1,7 @@
+{
+  "pythonVersion": "3.13",
+  "pythonPlatform": "Windows",
+  "typeCheckingMode": "basic",
+  "include": ["customer_support_env", "baseline.py"],
+  "exclude": ["**/__pycache__", "**/.*", "build", "dist"]
+}

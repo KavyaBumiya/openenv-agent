@@ -1,0 +1,187 @@
+name: customer_support_env
+version: 0.1.0
+description: Single-turn LLM agent environment for customer support ticket triage with realistic business logic.
+
+# Environment Configuration
+api_spec: openenv_0.1
+environment_type: rl
+episode_type: single-turn  # Each episode is one ticket → one action → done=True
+
+tasks:
+  - name: classify
+    description: Classify ticket into category (billing/technical/account/general/shipping) and priority (low/medium/high/urgent).
+    difficulty: easy
+    max_steps: 1
+    action_schema:
+      category:
+        type: string
+        enum: [billing, technical, account, general, shipping]
+        required: true
+      priority:
+        type: string
+        enum: [low, medium, high, urgent]
+        required: true
+    observation_fields:
+      - ticket_id
+      - subject
+      - body
+      - sender_tier
+      - task_name
+      - task_description
+      - action_schema
+      - policy_excerpt
+
+  - name: route
+    description: Classify ticket and route to appropriate department (tier1/tier2/billing/engineering/management), with optional escalation flag.
+    difficulty: medium
+    max_steps: 1
+    action_schema:
+      category:
+        type: string
+        enum: [billing, technical, account, general, shipping]
+        required: true
+      priority:
+        type: string
+        enum: [low, medium, high, urgent]
+        required: true
+      department:
+        type: string
+        enum: [tier1, tier2, billing, engineering, management]
+        required: true
+      requires_escalation:
+        type: boolean
+        required: false
+    observation_fields:
+      - ticket_id
+      - subject
+      - body
+      - sender_tier
+      - previous_tickets
+      - open_since_hours
+      - requires_escalation
+      - task_name
+      - task_description
+      - action_schema
+      - policy_excerpt
+
+  - name: resolve
+    description: Classify, route, and draft professional response acknowledging issue, providing solution/timeline, closing respectfully.
+    difficulty: hard
+    max_steps: 1
+    action_schema:
+      category:
+        type: string
+        enum: [billing, technical, account, general, shipping]
+        required: true
+      priority:
+        type: string
+        enum: [low, medium, high, urgent]
+        required: true
+      department:
+        type: string
+        enum: [tier1, tier2, billing, engineering, management]
+        required: true
+      requires_escalation:
+        type: boolean
+        required: false
+      response:
+        type: string
+        required: true
+    observation_fields:
+      - ticket_id
+      - subject
+      - body
+      - sender_tier
+      - previous_tickets
+      - open_since_hours
+      - sentiment
+      - requires_escalation
+      - task_name
+      - task_description
+      - action_schema
+      - policy_excerpt
+
+# Reward Function Configuration
+reward_config:
+  type: shaped  # Dense reward with multiple components
+  tasks:
+    classify:
+      weights:
+        category: 0.6
+        priority: 0.4
+      scaling: normalized  # Scores in [0, 1]
+    
+    route:
+      weights:
+        category: 0.35
+        priority: 0.25
+        department: 0.25
+        escalation: 0.15
+      scaling: normalized
+    
+    resolve:
+      weights:
+        category: 0.2
+        priority: 0.15
+        department: 0.15
+        escalation: 0.1
+        response: 0.4
+      scaling: normalized
+
+# Agent Interface
+agent_interface:
+  observation_format: text  # Natural language observations (no vision, no structured data)
+  action_format: json  # JSON action dictionaries
+  communication_protocol: rest_api  # HTTP/REST + optional WebSocket
+  required_tools: []  # LLM-only, no external tools
+
+# Randomness & Reproducibility
+randomness:
+  seed_support: true
+  dataset: customer_support_tickets_v1
+  dataset_size: 30  # Fixed 30 tickets
+
+# API Endpoints (FastAPI)
+api:
+  host: "0.0.0.0"
+  port: 8000
+  base_path: ""
+  endpoints:
+    - POST /reset -> observation
+    - POST /step -> (reward, observation, done, feedback)
+    - GET /state -> state
+    - GET /tasks -> task_definitions
+    - GET /grader -> reward_configuration
+    - POST /baseline -> baseline_scores
+    - WebSocket /ws -> real_time_interaction
+
+# Dataset
+dataset:
+  name: customer_support_tickets_v1
+  size: 30
+  format: json
+  includes:
+    - ticket_content: (id, subject, body)
+    - ground_truth_labels: (category, priority, department, requires_escalation, response_keywords)
+    - context: (sender_tier, previous_tickets, open_since_hours, sentiment)
+  splits:
+    train: 30    # All used for evaluation (no train/test split for hackathon)
+    test: 0
+
+# Implementation
+implementation:
+  language: python
+  framework: fastapi
+  environment_class: CustomerSupportEnvironment
+  models_module: customer_support_env.models
+  data_source: customer_support_env.data
+
+# Evaluation Criteria
+evaluation:
+  metric_primary: average_reward_per_task
+  metric_secondary: task_completion_rate
+  baseline_target:
+    classify: 0.80
+    route: 0.60
+    resolve: 0.40
+  variance_expected: true  # High variance expected due to LLM stochasticity

@@ -1,0 +1,15 @@
+# Customer Support RL Environment Dependencies
+
+# Core framework
+openenv>=0.1.0
+
+# API & server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+
+# LLM integration (for baseline)
+groq>=0.4.0
+
+# Utilities
+python-dotenv>=1.0.0
