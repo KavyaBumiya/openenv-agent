@@ -38,25 +38,34 @@ class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, Ti
         "resolve": {"category": 0.2, "priority": 0.15, "department": 0.15, "escalation": 0.1, "response": 0.4},
     }
     
-    # Action schema definitions shown to agent
+    # Action schema definitions shown to agent (now with examples)
     ACTION_SCHEMAS = {
         "classify": """{
   "category": "string (required): billing | technical | account | general | shipping",
   "priority": "string (required): low | medium | high | urgent"
-}""",
+}
+
+Example output:
+{"category": "billing", "priority": "high"}""",
         "route": """{
   "category": "string (required): billing | technical | account | general | shipping",
   "priority": "string (required): low | medium | high | urgent",
   "department": "string (required): tier1 | tier2 | billing | engineering | management",
   "requires_escalation": "boolean (optional): true if supervisor review needed"
-}""",
+}
+
+Example output:
+{"category": "technical", "priority": "high", "department": "engineering", "requires_escalation": false}""",
         "resolve": """{
   "category": "string (required): billing | technical | account | general | shipping",
   "priority": "string (required): low | medium | high | urgent",
   "department": "string (required): tier1 | tier2 | billing | engineering | management",
   "requires_escalation": "boolean (optional): true if supervisor review needed",
   "response": "string (required): Professional customer-facing response message"
-}""",
+}
+
+Example output:
+{"category": "billing", "priority": "medium", "department": "billing", "requires_escalation": false, "response": "Thank you for contacting us. We've reviewed your refund request..."}""",
     }
     
     # Task descriptions
@@ -65,6 +74,22 @@ class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, Ti
         "route": "Read the customer's ticket, classify it, assign priority, and determine which department should handle it (tier1, tier2, billing_team, engineering, or management).",
         "resolve": "Read the customer's ticket, classify it, assign priority, route it to the right department, and draft a professional response addressing their issue.",
     }
+    
+    # Routing policy that applies to all tasks
+    ROUTING_POLICY = """
+DEPARTMENT ROUTING POLICY:
+- tier1: General questions, FAQ answers, simple troubleshooting, standard refunds (low complexity)
+- tier2: Complex technical issues, account investigations, escalation preparation (medium complexity)
+- billing: Payment disputes, subscription changes, invoice corrections, refund processing
+- engineering: Bug reports, API errors, performance problems, feature requests
+- management: VIP retention, compliance/legal matters, contract disputes, security incidents
+
+ESCALATION CRITERIA (requires_escalation=true):
+  • Enterprise customer + financial/trust issue
+  • Security incident
+  • Customer threatening churn
+  • Policy exception required
+"""
     
     # Policy excerpts for resolve task
     POLICY_EXCERPTS = {
@@ -88,22 +113,27 @@ class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, Ti
         """Reset environment for new episode: pick ticket, set task, initialize state.
         
         Args:
-            seed: Random seed for reproducibility. If set, guarantees same ticket.
+            seed: Reproducible ticket selector (seed % len(TICKETS) = ticket index). If None, picks randomly.
             episode_id: Episode identifier (generated if not provided)
             task: "classify", "route", or "resolve"
             
         Returns:
             Initial observation with done=False, reward=None
         """
-        # Step 1: Set seed if provided (reproducibility requirement)
+        # Step 1: Pick a reproducible ticket based on seed
+        # Using modulo arithmetic: seed % len(TICKETS) ensures any seed works correctly
+        # If seed is None, pick randomly without affecting global state
         if seed is not None:
-            random.seed(seed)
+            ticket_index = seed % len(TICKETS)
+            self._ticket = TICKETS[ticket_index]
+        else:
+            # Use a local Random instance to avoid touching global state
+            rng = random.Random()
+            self._ticket = rng.choice(TICKETS)
         
-        # Step 2: Pick a random ticket from the dataset
-        self._ticket = random.choice(TICKETS)
         self._task = task
         
-        # Step 3: Initialize fresh state (no carryover from previous episode)
+        # Step 2: Initialize fresh state (no carryover from previous episode)
         self._state = TicketState(
             episode_id=episode_id or str(uuid.uuid4()),
             step_count=0,
@@ -111,20 +141,32 @@ class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, Ti
             difficulty=self.DIFFICULTY_MAP[task],
         )
         
-        # Step 4: Return initial observation
+        # Step 3: Return initial observation
         if self._ticket is None:
             raise RuntimeError("reset() must be called before step()")
+        
+        # Build policy excerpt: routing policy + category-specific policy for resolve task
+        policy_excerpt = self.ROUTING_POLICY
+        if task == "resolve":
+            category_policy = self.POLICY_EXCERPTS.get(self._ticket["category"], "")
+            if category_policy:
+                policy_excerpt += "\n\n" + category_policy
+        
         return TicketObservation(
             ticket_id=self._ticket["id"],
             subject=self._ticket["subject"],
             body=self._ticket["body"],
             sender_tier=self._ticket["tier"],
+            open_since_hours=self._ticket.get("open_since_hours", 0),
+            sentiment=self._ticket.get("sentiment", "neutral"),
             task_name=task,
             task_description=self.TASK_DESCRIPTIONS[task],
             action_schema=self.ACTION_SCHEMAS[task],
-            policy_excerpt=self.POLICY_EXCERPTS.get(self._ticket["category"], ""),
+            policy_excerpt=policy_excerpt,
             feedback="",  # No feedback on initial reset
             previous_tickets=self._ticket.get("previous_tickets", 0),
+            done=False,  # Explicitly False on reset
+            reward=None,  # No reward yet on reset
         )
     
     def step(self, action: TicketAction, timeout_s=None, **kwargs) -> TicketObservation:
@@ -152,15 +194,25 @@ class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, Ti
         # Return final observation: single-turn always done after one step
         if self._ticket is None:
             raise RuntimeError("reset() must be called before step()")
+        
+        # Build policy excerpt: routing policy + category-specific policy
+        policy_excerpt = self.ROUTING_POLICY
+        if self._task == "resolve":
+            category_policy = self.POLICY_EXCERPTS.get(self._ticket["category"], "")
+            if category_policy:
+                policy_excerpt += "\n\n" + category_policy
+        
         return TicketObservation(
             ticket_id=self._ticket["id"],
             subject=self._ticket["subject"],
             body=self._ticket["body"],
             sender_tier=self._ticket["tier"],
+            open_since_hours=self._ticket.get("open_since_hours", 0),
+            sentiment=self._ticket.get("sentiment", "neutral"),
             task_name=self._task,
             task_description=self.TASK_DESCRIPTIONS[self._task],
             action_schema=self.ACTION_SCHEMAS[self._task],
-            policy_excerpt=self.POLICY_EXCERPTS.get(self._ticket["category"], ""),
+            policy_excerpt=policy_excerpt,
             feedback=feedback,
             previous_tickets=self._ticket.get("previous_tickets", 0),
             done=True,

@@ -85,23 +85,17 @@ class EnvClient(Generic[ActionType, ObservationType, StateType]):
 
 
 def create_fastapi_app(env_class):
-    """Create a FastAPI app for the given environment class.
+    """Create a FastAPI app with bare initialization (no pre-registered routes).
     
-    This is a placeholder that returns a basic FastAPI app.
-    The actual implementation would create REST/WebSocket endpoints.
+    Routes must be registered in server/app.py to avoid conflicts.
+    This function only sets up the app metadata and middleware.
     """
     from fastapi import FastAPI
     
-    app = FastAPI(title=env_class.__name__)
-    
-    @app.get("/health")
-    def health():
-        """Health check endpoint."""
-        return {"status": "ok"}
-    
-    @app.get("/state")
-    def get_state():
-        """Get current environment state."""
-        return {"status": "not implemented"}
+    app = FastAPI(
+        title=f"{env_class.__name__} OpenEnv",
+        description="OpenEnv-compliant RL environment",
+        version="0.1.0"
+    )
     
     return app

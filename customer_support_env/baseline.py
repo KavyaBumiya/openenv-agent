@@ -12,6 +12,7 @@ Requires: GROQ_API_KEY in environment
 import json
 import sys
 import os
+import re
 from typing import Optional
 
 try:
@@ -22,6 +23,41 @@ except ImportError:
 
 from customer_support_env.environment import CustomerSupportEnvironment
 from customer_support_env.models import TicketAction
+
+
+def extract_json(text: str) -> dict:
+    """Robustly extract JSON from LLM output, handling markdown fences.
+    
+    LLMs sometimes wrap JSON in ```json ... ``` blocks.
+    This function handles both clean JSON and fenced JSON gracefully.
+    """
+    if not text:
+        raise ValueError("Empty response from LLM")
+    
+    # First, try the happy path: raw JSON
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    
+    # Second, strip markdown fences (```json ... ``` or ``` ... ```)
+    fence_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
+    if fence_match:
+        try:
+            return json.loads(fence_match.group(1))
+        except json.JSONDecodeError:
+            pass
+    
+    # Third, find the outermost JSON object with a greedy search
+    brace_match = re.search(r'\{[\s\S]*\}', text)
+    if brace_match:
+        try:
+            return json.loads(brace_match.group())
+        except json.JSONDecodeError:
+            pass
+    
+    raise ValueError(f"Could not extract valid JSON from: {text[:200]}")
 
 
 def run_baseline():
@@ -74,8 +110,8 @@ def run_baseline():
                 
                 # Extract JSON from response
                 response_text = response.choices[0].message.content
-                assert response_text is not None, "OpenAI response content is None"
-                action_dict = json.loads(response_text)
+                assert response_text is not None, "Groq response content is None"
+                action_dict = extract_json(response_text)
                 
                 # Convert to TicketAction
                 action = TicketAction(

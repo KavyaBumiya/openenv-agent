@@ -1,7 +1,7 @@
 # Customer Support RL Environment Dependencies
 
 # Core framework
-openenv>=0.1.0
+# openenv>=0.1.0  # Using local compat layer (customer_support_env/openenv_compat.py)
 
 # API & server
 fastapi>=0.104.0

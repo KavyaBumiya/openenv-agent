@@ -5,7 +5,7 @@ import subprocess
 import os
 from typing import Optional
 from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from ..openenv_compat import create_fastapi_app
 
 from ..environment import CustomerSupportEnvironment
@@ -166,10 +166,10 @@ async def run_baseline():
     
     Requires OPENAI_API_KEY in environment.
     """
-    if not os.getenv("OPENAI_API_KEY"):
+    if not os.getenv("GROQ_API_KEY"):
         raise HTTPException(
             status_code=400,
-            detail="OPENAI_API_KEY not set in environment. Baseline cannot run."
+            detail="GROQ_API_KEY not set in environment. Baseline cannot run."
         )
     
     try:
@@ -270,12 +270,18 @@ async def state():
     
     Returns:
         TicketState with current ticket, task, step count, etc.
+        Also includes current_ticket_id for debugging seed-based reproducibility.
     """
     try:
-        return _env.state.model_dump()
+        state_dict = _env.state.model_dump()
+        # Add the current ticket ID so agents can verify which ticket is active
+        if _env._ticket is not None:
+            state_dict["current_ticket_id"] = _env._ticket["id"]
+        return state_dict
     except AttributeError:
         raise HTTPException(status_code=400, detail="Environment not initialized. Call /reset first.")
 
+@app.get("/")
 async def root():
     """Health check and API info."""
     return {
@@ -285,10 +291,66 @@ async def root():
             "/docs": "Interactive API documentation (Swagger UI)",
             "/tasks": "GET - Task definitions for evaluation",
             "/grader": "GET - Scoring philosophy and reward breakdown",
-            "/baseline": "POST - Run baseline evaluation with GPT-4o-mini",
+            "/baseline": "POST - Run baseline evaluation with Groq",
             "/ws": "WebSocket - Real-time agent interaction",
             "/reset": "POST - Reset environment for new episode",
             "/step": "POST - Submit action and get reward",
             "/state": "GET - Get current environment state",
         },
     }
+
+
+@app.get("/health")
+async def health():
+    """Health check endpoint. Returns 200 when the server is ready."""
+    return {
+        "status": "ok",
+        "environment": "CustomerSupportEnvironment",
+        "version": "0.1.0",
+        "tasks": ["classify", "route", "resolve"],
+        "groq_configured": bool(os.getenv("GROQ_API_KEY")),
+    }
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time agent interaction.
+    
+    Protocol:
+      1. Client sends: {"action": "reset", "task": "classify", "seed": 0}
+      2. Server responds: observation dict
+      3. Client sends: {"action": "step", "category": "...", "priority": "..."}
+      4. Server responds: observation dict with reward and done=True
+    """
+    await websocket.accept()
+    ws_env = CustomerSupportEnvironment()  # Each WebSocket gets its own env
+    
+    try:
+        while True:
+            data = await websocket.receive_json()
+            action_type = data.get("action")
+            
+            if action_type == "reset":
+                obs = ws_env.reset(
+                    task=data.get("task", "classify"),
+                    seed=data.get("seed"),
+                    episode_id=data.get("episode_id")
+                )
+                await websocket.send_json(obs.model_dump())
+            
+            elif action_type == "step":
+                ticket_action = TicketAction(
+                    category=data.get("category", ""),
+                    priority=data.get("priority", ""),
+                    department=data.get("department"),
+                    requires_escalation=data.get("requires_escalation"),
+                    response=data.get("response")
+                )
+                obs = ws_env.step(ticket_action)
+                await websocket.send_json(obs.model_dump())
+            
+            else:
+                await websocket.send_json({"error": f"Unknown action: {action_type}"})
+    
+    except WebSocketDisconnect:
+        pass  # Client disconnected normally

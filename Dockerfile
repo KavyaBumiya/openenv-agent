@@ -26,7 +26,7 @@ EXPOSE 8000
 
 # Health check (HuggingFace Spaces requirement)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/tasks || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
 # The command that runs when the container starts
 # Module path: customer_support_env.server.app:app

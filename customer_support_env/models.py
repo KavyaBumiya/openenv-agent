@@ -99,6 +99,23 @@ class TicketObservation(Observation):
         description="Number of previous tickets submitted by this customer.",
     )
 
+    open_since_hours: int = Field(
+        default=0,
+        description=(
+            "How many hours this ticket has been open. "
+            "Tickets open more than 24 hours face SLA urgency — "
+            "priority errors are penalized more heavily for these tickets."
+        ),
+    )
+
+    sentiment: str = Field(
+        default="neutral",
+        description=(
+            "Customer emotional state: frustrated | angry | positive | neutral | confused | urgent. "
+            "For frustrated or angry customers, an empathetic response tone earns a bonus."
+        ),
+    )
+
     task_name: str = Field(
         ...,
         description="Task type: classify | route | resolve.",
