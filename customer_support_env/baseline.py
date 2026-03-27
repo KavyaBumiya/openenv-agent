@@ -14,12 +14,6 @@ import sys
 import os
 import re
 
-try:
-    from groq import Groq
-except ImportError:
-    print("Error: groq package not installed. Install with: pip install groq", file=sys.stderr)
-    sys.exit(1)
-
 from customer_support_env.environment import CustomerSupportEnvironment
 from customer_support_env.models import TicketAction
 from customer_support_env.data import TICKETS
@@ -62,6 +56,12 @@ def extract_json(text: str) -> dict:
 
 def run_baseline():
     """Run baseline evaluation on all 3 tasks."""
+
+    try:
+        from groq import Groq
+    except ImportError:
+        print("Error: groq package not installed. Install with: pip install groq", file=sys.stderr)
+        sys.exit(1)
     
     # Check API key
     if not os.getenv("GROQ_API_KEY"):

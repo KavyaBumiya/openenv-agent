@@ -113,7 +113,7 @@ customer_support_env/
 └── openenv_compat.py     # OpenEnv interface
 
 tests/
-├── test_openai_integration.py
+├── test_groq_integration.py
 ├── test_difficulty_levels.py
 └── test_difficulty_comprehensive.py
 
@@ -436,7 +436,7 @@ Submit action and get reward.
 {
   "category": "billing",
   "priority": "high",
-  "department": "billing_team",
+  "department": "billing",
   "response": "Thank you for reporting this issue..."
 }
 ```
@@ -451,9 +451,9 @@ Get scoring philosophy and weights (documentation).
 
 ### POST /baseline
 
-Execute baseline evaluation with gpt-4o-mini.
+Execute baseline evaluation with Groq (llama-3.3-70b-versatile).
 
-Requires: `OPENAI_API_KEY` environment variable
+Requires: `GROQ_API_KEY` environment variable
 
 ## Debugging
 
@@ -484,7 +484,7 @@ docker run -it customer-support-env /bin/bash
 - [ ] Dataset verification: `python -c "from customer_support_env.data import TICKETS; print(len(TICKETS))"`
 - [ ] Server health: `curl http://localhost:8000/`
 - [ ] Tasks endpoint: `curl http://localhost:8000/tasks`
-- [ ] Baseline (if OPENAI_API_KEY set): `python -m customer_support_env.baseline`
+- [ ] Baseline (if GROQ_API_KEY set): `python -m customer_support_env.baseline`
 - [ ] Docker build: `docker build -t test . && docker run -p 8000:8000 test`
 
 ## Evaluation Criteria

@@ -6,7 +6,6 @@ Shows how Groq performance degrades with increasing task complexity.
 
 import os
 import sys
-import json
 from groq import Groq
 
 api_key = os.getenv("GROQ_API_KEY")
@@ -18,6 +17,7 @@ client = Groq(api_key=api_key)
 
 from customer_support_env.environment import CustomerSupportEnvironment
 from customer_support_env.models import TicketAction
+from customer_support_env.baseline import extract_json
 
 print("=" * 70)
 print("COMPREHENSIVE DIFFICULTY TEST: 10 tickets × 3 difficulty levels")
@@ -58,7 +58,7 @@ Priorities: low, medium, high, urgent
         content = response.choices[0].message.content
         if content is None:
             raise ValueError("Groq returned empty response")
-        easy_result = json.loads(content)
+        easy_result = extract_json(content)
         action = TicketAction(
             category=easy_result['category'],
             priority=easy_result['priority'],
@@ -98,7 +98,7 @@ Departments: tier1, tier2, billing, engineering, management
         content = response.choices[0].message.content
         if content is None:
             raise ValueError("Groq returned empty response")
-        medium_result = json.loads(content)
+        medium_result = extract_json(content)
         action = TicketAction(
             category=medium_result['category'],
             priority=medium_result['priority'],
@@ -139,7 +139,7 @@ Response: 2-4 sentences, professional, empathetic, with clear next steps.
         content = response.choices[0].message.content
         if content is None:
             raise ValueError("Groq returned empty response")
-        hard_result = json.loads(content)
+        hard_result = extract_json(content)
         action = TicketAction(
             category=hard_result['category'],
             priority=hard_result['priority'],

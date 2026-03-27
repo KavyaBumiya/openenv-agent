@@ -11,7 +11,6 @@ All test on the SAME ticket so you can see how Groq handles increasing complexit
 
 import os
 import sys
-import json
 from groq import Groq
 
 # ========== SETUP ==========
@@ -26,6 +25,7 @@ client = Groq(api_key=api_key)
 # Use a real ticket
 from customer_support_env.environment import CustomerSupportEnvironment
 from customer_support_env.models import TicketAction
+from customer_support_env.baseline import extract_json
 
 env = CustomerSupportEnvironment()
 obs = env.reset(seed=42, task="classify")
@@ -67,7 +67,7 @@ try:
     content = response.choices[0].message.content
     if content is None:
         raise ValueError("Groq returned empty response")
-    easy_result = json.loads(content)
+    easy_result = extract_json(content)
     print(f"\n✓ EASY Result:")
     print(f"  Category: {easy_result['category']}")
     print(f"  Priority: {easy_result['priority']}")
@@ -126,7 +126,7 @@ try:
     content = response.choices[0].message.content
     if content is None:
         raise ValueError("Groq returned empty response")
-    medium_result = json.loads(content)
+    medium_result = extract_json(content)
     print(f"\n✓ MEDIUM Result:")
     print(f"  Category: {medium_result['category']}")
     print(f"  Priority: {medium_result['priority']}")
@@ -187,7 +187,7 @@ try:
     content = response.choices[0].message.content
     if content is None:
         raise ValueError("Groq returned empty response")
-    hard_result = json.loads(content)
+    hard_result = extract_json(content)
     print(f"\n✓ HARD Result:")
     print(f"  Category: {hard_result['category']}")
     print(f"  Priority: {hard_result['priority']}")

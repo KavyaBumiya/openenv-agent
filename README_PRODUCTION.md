@@ -349,7 +349,7 @@ python -m venv .venv
 pip install -r requirements.txt
 
 # Run tests
-python test_openai_integration.py          # Full baseline (30 episodes)
+python test_groq_integration.py            # Full baseline (dataset sweep per task)
 python test_difficulty_levels.py           # Single ticket EASY/MEDIUM/HARD
 python test_difficulty_comprehensive.py    # 10 tickets × 3 levels
 ```
@@ -444,7 +444,7 @@ customer_support_env/
     └── client.py          # Python client library
 
 tests/
-├── test_openai_integration.py           # Full integration test
+├── test_groq_integration.py             # Full integration test
 ├── test_difficulty_levels.py            # Single ticket
 ├── test_difficulty_comprehensive.py     # 10 tickets
 

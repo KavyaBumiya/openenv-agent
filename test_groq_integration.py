@@ -11,7 +11,7 @@ api_key = os.getenv("GROQ_API_KEY")
 
 if not api_key:
     print("ERROR: GROQ_API_KEY not set")
-    print("Set it with: $env:GROQ_API_KEY='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'")
+    print("Set it with: $env:GROQ_API_KEY='your-key'")
     sys.exit(1)
 
 print("OK - Groq API key loaded from environment\n")
@@ -78,12 +78,12 @@ Respond with ONLY valid JSON (no other text):
         temperature=0.1,
     )
     
-    import json
+    from customer_support_env.baseline import extract_json
     content = response.choices[0].message.content
     if content is None:
-        raise ValueError("OpenAI returned empty content for JSON response")
-    result = json.loads(content)
-    print(f"OK - GPT response:")
+        raise ValueError("Groq returned empty content for JSON response")
+    result = extract_json(content)
+    print("OK - Groq response:")
     print(f"  Category: {result['category']}")
     print(f"  Priority: {result['priority']}\n")
     
@@ -111,7 +111,7 @@ except Exception as e:
 print("=" * 60)
 print("TEST 3: Full Baseline Evaluation")
 print("=" * 60)
-print("This will run 30 episodes (10 per task)...\n")
+print("This runs one full dataset sweep per task...\n")
 print("(This may take 1-2 minutes)\n")
 
 try:

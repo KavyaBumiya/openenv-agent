@@ -14,164 +14,27 @@ Usage:
 
 import os
 import sys
-import json
 import argparse
-from typing import Optional
 
 # Ensure environment is in path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from customer_support_env.environment import CustomerSupportEnvironment
 from customer_support_env.models import TicketAction
+from customer_support_env.baseline import run_baseline as run_shared_baseline
 
 
 def run_baseline():
-    """Run baseline evaluation with Groq API."""
+    """Run the shared baseline evaluation workflow."""
     print("\n" + "=" * 80)
-    print("BASELINE EVALUATION: Groq (llama-3.3-70b-versatile)")
+    print("BASELINE EVALUATION")
     print("=" * 80)
-    
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        print("❌ ERROR: GROQ_API_KEY environment variable not set")
-        print("\nSet it with: $env:GROQ_API_KEY='your-key' (PowerShell)")
-        return
-    
+
     try:
-        from groq import Groq
-    except ImportError:
-        print("❌ ERROR: groq package not installed")
-        print("Install with: pip install groq")
-        return
-    
-    client = Groq(api_key=api_key)
-    env = CustomerSupportEnvironment()
-    
-    results = {"model": "llama-3.3-70b-versatile", "tasks": {}}
-    
-    for task in ["classify", "route", "resolve"]:
-        # Temperature settings per task
-        temp_settings = {"classify": 0.1, "route": 0.5, "resolve": 0.7}
-        temp = temp_settings.get(task, 0.1)
-        
-        print(f"\n{'─' * 80}")
-        print(f"Task: {task.upper()} (temperature={temp})")
-        print(f"{'─' * 80}")
-        
-        scores = []
-        
-        for episode in range(10):
-            try:
-                obs = env.reset(seed=episode, task=task)
-                
-                # Build prompt based on task
-                if task == "classify":
-                    prompt = f"""Classify this customer support ticket:
-
-Subject: {obs.subject}
-Body: {obs.body}
-Tier: {obs.sender_tier}
-
-Respond with ONLY valid JSON:
-{{"category": "billing|technical|account|general|shipping", "priority": "low|medium|high|urgent"}}"""
-                
-                elif task == "route":
-                    prompt = f"""Route this customer support ticket:
-
-Subject: {obs.subject}
-Body: {obs.body}
-Tier: {obs.sender_tier}
-
-Determine:
-1. Category (billing|technical|account|general|shipping)
-2. Priority (low|medium|high|urgent)
-3. Department (tier1|tier2|billing|engineering|management)
-4. Escalation needed (true|false)
-
-Respond with ONLY valid JSON:
-{{"category": "...", "priority": "...", "department": "...", "requires_escalation": false}}"""
-                
-                else:  # resolve
-                    prompt = f"""Resolve this customer support ticket:
-
-Subject: {obs.subject}
-Body: {obs.body}
-Tier: {obs.sender_tier}
-
-Determine:
-1. Category, Priority, Department, Escalation (as above)
-2. Write a 2-3 sentence professional response
-
-Respond with ONLY valid JSON:
-{{"category": "...", "priority": "...", "department": "...", "requires_escalation": false, "response": "Your response here"}}"""
-                
-                # Call Groq
-                response = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=temp,
-                    timeout=30,
-                )
-                
-                response_text = response.choices[0].message.content
-                if not response_text:
-                    raise ValueError("Empty response")
-                
-                # Parse JSON
-                action_dict = json.loads(response_text)
-                
-                # Create action
-                action = TicketAction(
-                    category=action_dict.get("category", ""),
-                    priority=action_dict.get("priority", ""),
-                    department=action_dict.get("department"),
-                    response=action_dict.get("response"),
-                    requires_escalation=action_dict.get("requires_escalation", False),
-                )
-                
-                # Grade
-                step_obs = env.step(action)
-                score = step_obs.reward if step_obs.reward is not None else 0.0
-                scores.append(score)
-                
-                print(f"  Episode {episode:2d}: {score:.1%}")
-                
-            except Exception as e:
-                print(f"  Episode {episode:2d}: ❌ {str(e)[:50]}")
-                scores.append(0.0)
-        
-        # Stats
-        mean = sum(scores) / len(scores) if scores else 0
-        min_s = min(scores) if scores else 0
-        max_s = max(scores) if scores else 0
-        results["tasks"][task] = {
-            "mean": mean,
-            "min": min_s,
-            "max": max_s,
-            "scores": scores,
-        }
-        
-        print(f"\n  Summary: Mean={mean:.1%}, Range={min_s:.1%}→{max_s:.1%}")
-    
-    # Print final results
-    print("\n" + "=" * 80)
-    print("FINAL RESULTS")
-    print("=" * 80)
-    for task, data in results["tasks"].items():
-        print(f"\n{task.upper()}:")
-        print(f"  Mean:   {data['mean']:.1%}")
-        print(f"  Min:    {data['min']:.1%}")
-        print(f"  Max:    {data['max']:.1%}")
-    
-    # Gradient check
-    easy = results["tasks"]["classify"]["mean"]
-    medium = results["tasks"]["route"]["mean"]
-    hard = results["tasks"]["resolve"]["mean"]
-    
-    if easy > medium > hard:
-        print(f"\n✅ DIFFICULTY GRADIENT: EASY ({easy:.1%}) > MEDIUM ({medium:.1%}) > HARD ({hard:.1%})")
-    else:
-        print(f"\n⚠️  GRADIENT: Easy={easy:.1%}, Medium={medium:.1%}, Hard={hard:.1%}")
+        run_shared_baseline()
+    except SystemExit:
+        # baseline.py uses sys.exit for missing API/dependency checks.
+        pass
 
 
 def run_server():
@@ -332,7 +195,7 @@ def show_menu():
     print("=" * 80)
     print("""
 Commands:
-  main.py baseline    - Run baseline evaluation with Groq (10 episodes per task)
+    main.py baseline    - Run baseline evaluation with Groq (full dataset per task)
   main.py server      - Start FastAPI server (http://localhost:8000)
   main.py test        - Run quick environment test
   main.py demo        - Interactive demo mode
