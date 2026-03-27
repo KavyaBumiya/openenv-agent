@@ -234,30 +234,24 @@ print("\n" + "=" * 80)
 print("PERFORMANCE COMPARISON")
 print("=" * 80)
 
-baselines = {
-    "Zero-shot baseline": {"easy": 0.696, "medium": 0.625, "hard": 0.538},
-    "Few-shot examples": {"easy": 0.840, "medium": 0.565, "hard": 0.411},
-}
+# Note: Previous hardcoded baselines removed. 
+# For official benchmark comparison, run: python -m customer_support_env.baseline --mode official
+# That produces reproducible scores with temperature=0.1 on full dataset.
 
 current_easy, _, _, _ = compute_stats(results["easy"])
 current_medium, _, _, _ = compute_stats(results["medium"])
 current_hard, _, _, _ = compute_stats(results["hard"])
 current = {"easy": current_easy, "medium": current_medium, "hard": current_hard}
 
-print("\nEASY Task:")
-for name, scores in baselines.items():
-    print(f"  {name:25s}: {scores['easy']:.1%}")
-print(f"  {'Chain-of-Thought':25s}: {current['easy']:.1%} {'✅ BEST' if current['easy'] > max(s['easy'] for s in baselines.values()) else ''}")
+print("\n⚠️  Baseline Comparison Removed")
+print("To compare against official baseline:")
+print("  python -m customer_support_env.baseline --mode official")
+print("(That runs with temperature=0.1 for reproducibility)")
 
-print("\nMEDIUM Task:")
-for name, scores in baselines.items():
-    print(f"  {name:25s}: {scores['medium']:.1%}")
-print(f"  {'Chain-of-Thought':25s}: {current['medium']:.1%} {'✅ BEST' if current['medium'] > max(s['medium'] for s in baselines.values()) else ''}")
-
-print("\nHARD Task:")
-for name, scores in baselines.items():
-    print(f"  {name:25s}: {scores['hard']:.1%}")
-print(f"  {'Chain-of-Thought':25s}: {current['hard']:.1%} {'✅ BEST' if current['hard'] > max(s['hard'] for s in baselines.values()) else ''}")
+print("\n✅ Chain-of-Thought Results:")
+print(f"  EASY Task:   {current['easy']:.1%}")
+print(f"  MEDIUM Task: {current['medium']:.1%}")
+print(f"  HARD Task:   {current['hard']:.1%}")
 
 print("\n" + "=" * 80)
 print("CONCLUSION")
@@ -265,22 +259,15 @@ print("=" * 80)
 print(f"""
 ✅ Proper Difficulty Gradient Achieved:
    EASY: {current['easy']:.1%} → MEDIUM: {current['medium']:.1%} → HARD: {current['hard']:.1%}
-   
-✅ Improvement from Few-Shot:
-   EASY:   {current['easy'] - baselines['Few-shot examples']['easy']:+.1%}
-   MEDIUM: {current['medium'] - baselines['Few-shot examples']['medium']:+.1%}
-   HARD:   {current['hard'] - baselines['Few-shot examples']['hard']:+.1%}
 
-🎯 Chain-of-Thought prompting works! Groq reasons better when asked to explain.
+🎯 Chain-of-Thought prompting works! Groq reasons better when asked to explain step-by-step.
 
-📊 Key metrics show Groq can achieve:
-   - 80%+ on classification (EASY)
-   - 50-60% on routing (MEDIUM) 
-   - 30-50% on resolution (HARD)
+📊 This is an exploratory run (temperature=0.5-0.7 for variance).
+   For official reproducible baseline: python -m customer_support_env.baseline --mode official
 
 🚀 Next steps to further improve:
-   1. Add more training examples
-   2. Fine-tune system prompt
-   3. Use majority voting (run 3× and pick best)
+   1. Few-shot examples (show correct classifications first)
+   2. System prompt tuning
+   3. Majority voting (run 3× with different seeds)
    4. Ensemble different models
 """)

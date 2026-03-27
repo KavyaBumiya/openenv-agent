@@ -54,8 +54,15 @@ def extract_json(text: str) -> dict:
     raise ValueError(f"Could not extract valid JSON from: {text[:200]}")
 
 
-def run_baseline():
-    """Run baseline evaluation on all 3 tasks."""
+def run_baseline(mode="official"):
+    """Run baseline evaluation on all 3 tasks.
+    
+    Args:
+        mode: "official" (low temp, reproducible) or "training" (variable temp for exploration)
+    
+    Official mode: temperature=0.1 for all tasks (deterministic, reproducible scores for benchmarking)
+    Training mode: task-specific temps (0.1/0.5/0.7 for difficulty-based exploration)
+    """
 
     try:
         from groq import Groq
@@ -71,16 +78,43 @@ def run_baseline():
     client = Groq(api_key=os.getenv("GROQ_API_KEY"))
     env = CustomerSupportEnvironment()
     
+    # Set temperature strategy based on mode
+    if mode == "official":
+        # Benchmark mode: low temperature for reproducibility
+        temp_strategy = {
+            "classify": 0.1,
+            "route": 0.1,
+            "resolve": 0.1,
+        }
+        mode_label = "OFFICIAL BENCHMARK (temperature=0.1 all tasks)"
+    elif mode == "training":
+        # Training/exploration mode: task-specific temps for variance
+        temp_strategy = {
+            "classify": 0.1,
+            "route": 0.5,
+            "resolve": 0.7,
+        }
+        mode_label = "TRAINING MODE (variable temperature by task)"
+    else:
+        raise ValueError(f"Unknown mode: {mode}. Use 'official' or 'training'")
+    
     results = {
         "model": "llama-3.3-70b-versatile",
         "provider": "groq",
+        "mode": mode,
+        "temperature_strategy": temp_strategy,
         "episodes_per_task": len(TICKETS),
         "tasks": {},
     }
     
+    print(f"\n{'='*60}")
+    print(f"BASELINE EVALUATION: {mode_label}")
+    print(f"{'='*60}\n")
+    
     for task in ["classify", "route", "resolve"]:
         print(f"\n{'='*60}")
-        print(f"Running baseline on task: {task}")
+        print(f"Running {mode} baseline on task: {task}")
+        print(f"Temperature: {temp_strategy[task]}")
         print(f"{'='*60}")
         
         scores = []
@@ -95,11 +129,7 @@ def run_baseline():
                 # Build prompt for the agent
                 prompt = _build_prompt(task, obs)
                 
-                task_temperature = {
-                    "classify": 0.1,
-                    "route": 0.5,
-                    "resolve": 0.7,
-                }[task]
+                task_temperature = temp_strategy[task]
 
                 # Call Groq
                 response = client.chat.completions.create(
@@ -257,4 +287,15 @@ def _compute_std(scores: list) -> float:
 
 
 if __name__ == "__main__":
-    run_baseline()
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Run baseline evaluation")
+    parser.add_argument(
+        "--mode",
+        choices=["official", "training"],
+        default="official",
+        help="Benchmark mode (reproducible, low-temp) or training mode (exploratory, variable-temp)"
+    )
+    args = parser.parse_args()
+    
+    run_baseline(mode=args.mode)

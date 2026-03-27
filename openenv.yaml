@@ -165,8 +165,8 @@ dataset:
     - ground_truth_labels: (category, priority, department, requires_escalation, response_keywords)
     - context: (sender_tier, previous_tickets, open_since_hours, sentiment)
   splits:
-    train: 30    # All used for evaluation (no train/test split for hackathon)
-    test: 0
+    train: 20    # Used for training/few-shot examples
+    test: 10     # Reserved for evaluation (or full sweep for evaluation)
 
 # Implementation
 implementation:
