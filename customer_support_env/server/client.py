@@ -40,6 +40,8 @@ class CustomerSupportClient(EnvClient[TicketAction, TicketObservation, TicketSta
             subject=obs_data.get("subject", ""),
             body=obs_data.get("body", ""),
             sender_tier=obs_data.get("sender_tier", ""),
+            open_since_hours=obs_data.get("open_since_hours", 0),
+            sentiment=obs_data.get("sentiment", "neutral"),
             task_name=obs_data.get("task_name", "classify"),
             task_description=obs_data.get("task_description", ""),
             action_schema=obs_data.get("action_schema", "{}"),

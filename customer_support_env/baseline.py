@@ -89,7 +89,7 @@ def run_baseline():
         for episode in range(len(TICKETS)):
             try:
                 # Reset environment with seed for reproducibility
-            # seed=episode means deterministic full-dataset sweep per task
+                # seed=episode means deterministic full-dataset sweep per task
                 obs = env.reset(seed=episode, episode_id=f"baseline-{task}-{episode}", task=task)
                 
                 # Build prompt for the agent
