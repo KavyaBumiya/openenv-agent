@@ -88,7 +88,7 @@ def run_baseline():
                 
                 # Grade action
                 step_obs = env.step(action)
-                score = step_obs.reward
+                score = step_obs.reward if step_obs.reward is not None else 0.0
                 scores.append(score)
                 
                 print(f"  Episode {episode}: score={score:.3f}")

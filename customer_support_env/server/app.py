@@ -3,14 +3,38 @@
 import json
 import subprocess
 import os
+from typing import Optional
+from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException
 from ..openenv_compat import create_fastapi_app
 
 from ..environment import CustomerSupportEnvironment
+from ..models import TicketAction
 
 
 # Create base app with standard endpoints (/ws, /reset, /step, /state, /health)
 app = create_fastapi_app(CustomerSupportEnvironment)
+
+
+# ============= REQUEST/RESPONSE MODELS =============
+
+class ResetRequest(BaseModel):
+    task: str = "classify"
+    seed: Optional[int] = None
+    episode_id: Optional[str] = None
+
+
+class StepRequest(BaseModel):
+    category: str
+    priority: str
+    department: Optional[str] = None
+    requires_escalation: Optional[bool] = None
+    response: Optional[str] = None
+
+
+# Global environment instance for REST endpoints
+_env = CustomerSupportEnvironment()
+
 
 
 # ============= REQUIRED ENDPOINTS FOR EVALUATION =============
@@ -191,7 +215,67 @@ async def run_baseline():
         }
 
 
-@app.get("/")
+# ============= STANDARD OPENENV REST ENDPOINTS =============
+
+@app.post("/reset")
+async def reset(req: ResetRequest):
+    """Reset environment for new episode.
+    
+    Args:
+        task: Task type (classify, route, resolve). Defaults to "classify".
+        seed: Random seed for reproducibility (0-29). If None, uses random.
+        episode_id: Optional episode identifier for logging.
+    
+    Returns:
+        TicketObservation with subject, body, tier, task info.
+    """
+    try:
+        obs = _env.reset(task=req.task, seed=req.seed, episode_id=req.episode_id)
+        return obs.model_dump()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/step")
+async def step(req: StepRequest):
+    """Submit action and receive reward.
+    
+    Args:
+        category: Ticket classification (billing, technical, account, general, shipping)
+        priority: Urgency level (low, medium, high, urgent)
+        department: Routing destination (tier1, tier2, billing, engineering, management)
+        requires_escalation: Whether to flag for supervisor review (boolean)
+        response: Customer-facing response text (required for resolve task)
+    
+    Returns:
+        TicketObservation with reward, feedback, done flag.
+    """
+    try:
+        action = TicketAction(
+            category=req.category,
+            priority=req.priority,
+            department=req.department,
+            requires_escalation=req.requires_escalation,
+            response=req.response,
+        )
+        obs = _env.step(action)
+        return obs.model_dump()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/state")
+async def state():
+    """Get current environment state.
+    
+    Returns:
+        TicketState with current ticket, task, step count, etc.
+    """
+    try:
+        return _env.state.model_dump()
+    except AttributeError:
+        raise HTTPException(status_code=400, detail="Environment not initialized. Call /reset first.")
+
 async def root():
     """Health check and API info."""
     return {

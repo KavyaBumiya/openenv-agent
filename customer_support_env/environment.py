@@ -112,7 +112,8 @@ class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, Ti
         )
         
         # Step 4: Return initial observation
-        assert self._ticket is not None, "Ticket must be set in reset()"
+        if self._ticket is None:
+            raise RuntimeError("reset() must be called before step()")
         return TicketObservation(
             ticket_id=self._ticket["id"],
             subject=self._ticket["subject"],
@@ -149,7 +150,8 @@ class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, Ti
             feedback = f"Could not grade action: {str(e)}"
         
         # Return final observation: single-turn always done after one step
-        assert self._ticket is not None, "Ticket must be set before step()"
+        if self._ticket is None:
+            raise RuntimeError("reset() must be called before step()")
         return TicketObservation(
             ticket_id=self._ticket["id"],
             subject=self._ticket["subject"],
@@ -191,7 +193,8 @@ class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, Ti
         response = (action.response or "").strip()
         
         # Ground truth from dataset
-        assert self._ticket is not None, "Ticket must be set before grading"
+        if self._ticket is None:
+            raise RuntimeError("reset() must be called before step()")
         gt_category = self._ticket["category"].lower()
         gt_priority = self._ticket["priority"].lower()
         gt_department = self._ticket["department"].lower()
@@ -384,7 +387,8 @@ class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, Ti
         
         Used for grading transparency and debugging.
         """
-        assert self._ticket is not None, "Ticket must be set before building feedback"
+        if self._ticket is None:
+            raise RuntimeError("reset() must be called before step()")
         gt_category = self._ticket["category"]
         gt_priority = self._ticket["priority"]
         gt_department = self._ticket["department"]
@@ -434,7 +438,8 @@ class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, Ti
         
         # Response feedback (if task requires it)
         if self._task == "resolve":
-            assert self._ticket is not None
+            if self._ticket is None:
+                raise RuntimeError("reset() must be called before step()")
             gt_keywords = self._ticket.get("response_keywords", [])
             response_text = (action.response or "").strip()
             

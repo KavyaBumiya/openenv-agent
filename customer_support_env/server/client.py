@@ -1,6 +1,6 @@
 """WebSocket client: serializes Python objects to/from JSON."""
 
-from customer_support_env.openenv_compat import EnvClient, StepResult
+from ..openenv_compat import EnvClient, StepResult
 
 from ..models import TicketAction, TicketObservation, TicketState
 
