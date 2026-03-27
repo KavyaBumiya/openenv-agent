@@ -1,7 +1,7 @@
 """Data models: the contract between agent, environment, and grader."""
 
-from pydantic import BaseModel, Field
-from typing import Optional
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional, Literal
 from .openenv_compat import Action, Observation, State
 
 
@@ -14,7 +14,7 @@ class TicketAction(Action):
     - resolve → category, priority, department, requires_escalation, response
     """
 
-    category: str = Field(
+    category: Literal["billing", "technical", "account", "shipping", "general"] = Field(
         ...,
         description=(
             "Ticket category: billing | technical | account | shipping | general. "
@@ -22,7 +22,7 @@ class TicketAction(Action):
         ),
     )
 
-    priority: str = Field(
+    priority: Literal["low", "medium", "high", "urgent"] = Field(
         ...,
         description=(
             "Priority level: low | medium | high | urgent. "
@@ -30,7 +30,7 @@ class TicketAction(Action):
         ),
     )
 
-    department: Optional[str] = Field(
+    department: Optional[Literal["tier1", "tier2", "billing", "engineering", "management"]] = Field(
         None,
         description=(
             "Routing destination: tier1 | tier2 | billing | engineering | management. "
@@ -53,6 +53,21 @@ class TicketAction(Action):
             "Should acknowledge issue, provide next steps or solution, and maintain professional tone."
         ),
     )
+
+    @field_validator("response")
+    @classmethod
+    def _normalize_response(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    def validate_for_task(self, task_name: str) -> None:
+        """Enforce task-specific requirements for route/resolve actions."""
+        if task_name in ("route", "resolve") and self.department is None:
+            raise ValueError("department is required for route and resolve tasks")
+        if task_name == "resolve" and self.response is None:
+            raise ValueError("response is required for resolve task")
 
 
 class TicketObservation(Observation):

@@ -49,21 +49,22 @@ class Environment(Generic[ActionType, ObservationType, StateType]):
     
     def __init__(self):
         """Initialize the environment."""
-        self.state: StateType | None = None
         self.done = False
+
+    @property
+    def state(self) -> StateType:
+        """Read-only access to current environment state."""
+        raise NotImplementedError
     
     def reset(self) -> ObservationType:
         """Reset the environment and return initial observation."""
         raise NotImplementedError
     
-    def step(self, action: ActionType) -> tuple[ObservationType, float, bool, Dict[str, Any]]:
+    def step(self, action: ActionType) -> ObservationType:
         """Execute one step with the given action.
         
         Returns:
-            observation: Current observation
-            reward: Reward for this step
-            done: Whether episode is finished
-            info: Additional info dict
+            Final observation after processing action.
         """
         raise NotImplementedError
     

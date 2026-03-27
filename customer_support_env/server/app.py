@@ -164,7 +164,7 @@ async def run_baseline():
     Proof that the environment is usable and produces meaningful variance.
     This endpoint is called during evaluation.
     
-    Requires OPENAI_API_KEY in environment.
+    Requires GROQ_API_KEY in environment.
     """
     if not os.getenv("GROQ_API_KEY"):
         raise HTTPException(

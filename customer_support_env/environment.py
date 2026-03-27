@@ -35,7 +35,7 @@ class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, Ti
     REWARD_WEIGHTS = {
         "classify": {"category": 0.6, "priority": 0.4},
         "route": {"category": 0.35, "priority": 0.25, "department": 0.25, "escalation": 0.15},
-        "resolve": {"category": 0.2, "priority": 0.15, "department": 0.15, "escalation": 0.1, "response": 0.4},
+        "resolve": {"category": 0.2, "priority": 0.15, "department": 0.2, "escalation": 0.15, "response": 0.3},
     }
     
     # Action schema definitions shown to agent (now with examples)
@@ -71,7 +71,7 @@ Example output:
     # Task descriptions
     TASK_DESCRIPTIONS = {
         "classify": "Read the customer's ticket and classify it into a category (billing, technical, account, general, or shipping) and assign a priority level (low, medium, high, urgent).",
-        "route": "Read the customer's ticket, classify it, assign priority, and determine which department should handle it (tier1, tier2, billing_team, engineering, or management).",
+        "route": "Read the customer's ticket, classify it, assign priority, and determine which department should handle it (tier1, tier2, billing, engineering, or management).",
         "resolve": "Read the customer's ticket, classify it, assign priority, route it to the right department, and draft a professional response addressing their issue.",
     }
     
@@ -181,7 +181,13 @@ ESCALATION CRITERIA (requires_escalation=true):
         Returns:
             Final observation with done=True, reward, and feedback
         """
+        if self._ticket is None:
+            raise RuntimeError("reset() must be called before step()")
+
         self._state.step_count += 1
+
+        # Enforce task-specific action requirements early.
+        action.validate_for_task(self._task)
         
         # Try to grade, gracefully handle malformed actions
         try:
@@ -192,9 +198,6 @@ ESCALATION CRITERIA (requires_escalation=true):
             feedback = f"Could not grade action: {str(e)}"
         
         # Return final observation: single-turn always done after one step
-        if self._ticket is None:
-            raise RuntimeError("reset() must be called before step()")
-        
         # Build policy excerpt: routing policy + category-specific policy
         policy_excerpt = self.ROUTING_POLICY
         if self._task == "resolve":
@@ -257,7 +260,7 @@ ESCALATION CRITERIA (requires_escalation=true):
         cat_score = 1.0 if category == gt_category else 0.0
         
         # Priority scoring with enterprise penalty
-        pri_score = self._score_priority(priority, gt_priority, self._ticket, action)
+        pri_score = self._score_priority(priority, gt_priority, self._ticket)
         
         # Department scoring with fallback logic
         dept_score = self._score_department(department, gt_department)
@@ -299,7 +302,7 @@ ESCALATION CRITERIA (requires_escalation=true):
         
         return round(final_score, 3)
     
-    def _score_priority(self, predicted: str, actual: str, ticket: Dict[str, Any], action: TicketAction) -> float:
+    def _score_priority(self, predicted: str, actual: str, ticket: Dict[str, Any]) -> float:
         """Graduated priority scoring with enterprise customer awareness.
         
         Key insight: Enterprise customers expect higher urgency handling.
@@ -352,6 +355,7 @@ ESCALATION CRITERIA (requires_escalation=true):
         Returns:
             1.0 for exact match
             0.4 for tier1 when tier2 expected (acceptable fallback)
+            0.4 for tier2 when engineering expected, or engineering when tier2 expected
             0.0 otherwise
         """
         if not predicted:
@@ -362,6 +366,12 @@ ESCALATION CRITERIA (requires_escalation=true):
         
         # Reasonable fallback: tier1 instead of tier2
         if predicted == "tier1" and actual == "tier2":
+            return 0.4
+
+        # Reasonable technical fallback between tier2 triage and engineering.
+        if (predicted == "tier2" and actual == "engineering") or (
+            predicted == "engineering" and actual == "tier2"
+        ):
             return 0.4
         
         # No fallback credit otherwise
@@ -402,7 +412,16 @@ ESCALATION CRITERIA (requires_escalation=true):
             return 1.0  # No keywords required, return full credit
         
         response_lower = response_text.lower()
-        found_count = sum(1 for kw in required_keywords if kw.lower() in response_lower)
+
+        def _kw_match(kw: str, text: str) -> bool:
+            # Light stemming for common suffixes to reduce morphology brittleness.
+            variants = {kw.lower()}
+            for suffix in ("ed", "ing", "s", "tion"):
+                if kw.lower().endswith(suffix) and len(kw) > len(suffix) + 2:
+                    variants.add(kw.lower()[: -len(suffix)])
+            return any(v and v in text for v in variants)
+
+        found_count = sum(1 for kw in required_keywords if _kw_match(kw, response_lower))
         
         # Require at least 3 out of N keywords, or 75% of them
         threshold = max(3, int(len(required_keywords) * 0.75))
@@ -416,13 +435,24 @@ ESCALATION CRITERIA (requires_escalation=true):
             base_score = 0.3
         else:
             return 0.0  # Too few keywords
+
+        # Actionability requirement: concrete next-step phrasing should be present.
+        action_phrases = ["we will", "next steps", "please", "within", "today", "hours", "days"]
+        has_action_phrase = any(phrase in response_lower for phrase in action_phrases)
+        if not has_action_phrase:
+            base_score = max(0.0, base_score - 0.2)
+
+        # Penalize filler-heavy responses that game keywords without concrete content.
+        filler_markers = ["as an ai", "cannot assist", "lorem", "blah", "template"]
+        if any(marker in response_lower for marker in filler_markers):
+            base_score = max(0.0, base_score - 0.3)
         
         # Boost score if sentiment-matched
         sentiment = ticket.get("sentiment", "neutral").lower()
         empathy_keywords = ["sorry", "understand", "apologize", "thank you", "appreciate", "happy to help"]
         has_empathy = any(ek in response_lower for ek in empathy_keywords)
         
-        # Frustrated/angry customers → must show empathy
+        # Frustrated/angry customers → reward empathy
         if sentiment in ["frustrated", "angry", "distressed"] and has_empathy:
             base_score = min(1.0, base_score + 0.1)  # Bonus for emotional intelligence
         
@@ -500,8 +530,11 @@ ESCALATION CRITERIA (requires_escalation=true):
                 feedback_parts.append(f"✗ Response required for HARD task (PENALTY: -50% for incomplete resolve)")
             else:
                 response_lower = response_text.lower()
-                found = sum(1 for kw in gt_keywords if kw.lower() in response_lower)
-                feedback_parts.append(f"Response: {found}/{len(gt_keywords)} keywords found")
+                found = [kw for kw in gt_keywords if kw.lower() in response_lower]
+                missing = [kw for kw in gt_keywords if kw.lower() not in response_lower]
+                feedback_parts.append(
+                    f"Response: {len(found)}/{len(gt_keywords)} keywords found. Missing: {missing if missing else 'none'}"
+                )
         
         # Overall score context
         if score >= 0.9:
@@ -513,6 +546,4 @@ ESCALATION CRITERIA (requires_escalation=true):
         else:
             quality = "Needs improvement"
         
-        feedback_parts.append(f"\nScore: {quality} ({score:.2f})")
-        
-        return " | ".join(feedback_parts)
+        return f"{' | '.join(feedback_parts)} | Score: {quality} ({score:.2f})"

@@ -1,11 +1,11 @@
-"""Baseline evaluation: Groq (llama-3.3-70b-versatile) on 30 episodes (10 per task).
+"""Baseline evaluation: Groq (llama-3.3-70b-versatile) across full dataset per task.
 
 This script proves:
 1. The environment is usable by AI agents
 2. Score variance is meaningful (not always 0.5)
 3. The integration works end-to-end
 
-Reproducibility: seed=ep_number guarantees same ticket each run.
+Reproducibility: seed selects ticket index via modulo mapping.
 Requires: GROQ_API_KEY in environment
 """
 
@@ -13,7 +13,6 @@ import json
 import sys
 import os
 import re
-from typing import Optional
 
 try:
     from groq import Groq
@@ -23,6 +22,7 @@ except ImportError:
 
 from customer_support_env.environment import CustomerSupportEnvironment
 from customer_support_env.models import TicketAction
+from customer_support_env.data import TICKETS
 
 
 def extract_json(text: str) -> dict:
@@ -74,7 +74,7 @@ def run_baseline():
     results = {
         "model": "llama-3.3-70b-versatile",
         "provider": "groq",
-        "episodes_per_task": 10,
+        "episodes_per_task": len(TICKETS),
         "tasks": {},
     }
     
@@ -86,15 +86,21 @@ def run_baseline():
         scores = []
         errors = []
         
-        for episode in range(10):
+        for episode in range(len(TICKETS)):
             try:
                 # Reset environment with seed for reproducibility
-                # seed=episode means: episode 0→seed 0→same ticket every run
+            # seed=episode means deterministic full-dataset sweep per task
                 obs = env.reset(seed=episode, episode_id=f"baseline-{task}-{episode}", task=task)
                 
                 # Build prompt for the agent
                 prompt = _build_prompt(task, obs)
                 
+                task_temperature = {
+                    "classify": 0.1,
+                    "route": 0.5,
+                    "resolve": 0.7,
+                }[task]
+
                 # Call Groq
                 response = client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
@@ -104,13 +110,14 @@ def run_baseline():
                             "content": prompt,
                         }
                     ],
-                    temperature=0.1,  # Low temperature for reproducibility
+                    temperature=task_temperature,
                     timeout=30,
                 )
                 
                 # Extract JSON from response
                 response_text = response.choices[0].message.content
-                assert response_text is not None, "Groq response content is None"
+                if response_text is None:
+                    raise ValueError("Groq response content is None")
                 action_dict = extract_json(response_text)
                 
                 # Convert to TicketAction
@@ -129,8 +136,8 @@ def run_baseline():
                 
                 print(f"  Episode {episode}: score={score:.3f}")
                 
-            except json.JSONDecodeError as e:
-                print(f"  Episode {episode}: JSON parsing error - {str(e)}")
+            except ValueError as e:
+                print(f"  Episode {episode}: Parse/validation error - {str(e)}")
                 errors.append(str(e))
                 scores.append(0.0)
             
@@ -227,10 +234,11 @@ You are an expert customer support routing system. Your job is to read customer 
 IMPORTANT:
 1. Respond ONLY with valid JSON. No other text.
 2. All required fields MUST be present.
-3. For category, use one of: billing, technical, account, general, or shipping
-4. For priority, use one of: low, medium, high, or urgent
-5. For department (if required), use one of: tier1, tier2, billing, engineering, or management
-6. If writing a response, make it professional, acknowledge the issue, and provide clear next steps.
+3. Do not include extra keys beyond the schema.
+4. For category, use one of: billing, technical, account, general, or shipping
+5. For priority, use one of: low, medium, high, or urgent
+6. For department (if required), use one of: tier1, tier2, billing, engineering, or management
+7. If writing a response, make it professional, acknowledge the issue, and provide clear next steps.
 
 Analyze the ticket carefully and respond with JSON.
 """
