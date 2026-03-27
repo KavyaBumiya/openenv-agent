@@ -57,17 +57,14 @@ When server is running: **http://localhost:8000/docs**
 ### EASY: Classify
 Predict category + priority  
 **Output**: `{"category": "...", "priority": "..."}`  
-**Baseline**: 69.6% accuracy
 
 ### MEDIUM: Route
 + Department routing + escalation flag  
 **Output**: `{..., "department": "...", "requires_escalation": bool}`  
-**Baseline**: 62.5% accuracy
 
 ### HARD: Resolve
 + Professional response generation  
 **Output**: `{..., "response": "..."}`  
-**Baseline**: 53.8% accuracy  
 ***Penalty***: Missing response = -50% (ensures responses are required)
 
 ---
@@ -84,18 +81,13 @@ Predict category + priority
 
 ## 📈 Baseline Results
 
-**Model**: Groq Llama-3.3-70b  
-**Episodes**: 30 (10 per task)  
-**Prompting**: Zero-shot
+**Model**: Groq Llama-3.3-70b-versatile  
+**Episodes**: 30 full-dataset sweep (all tickets, all 3 tasks)  
+**Prompting**: Zero-shot  
+**Temperature**: Task-specific (0.1 classify, 0.5 route, 0.7 resolve)  
 
-| Task | Score | Min | Max | Variance |
-|------|-------|-----|-----|----------|
-| Classify | **69.6%** | 24% | 100% | ✓ Meaningful |
-| Route | **62.5%** | 15% | 100% | ✓ Meaningful |
-| Resolve | **53.8%** | 25% | 88% | ✓ Meaningful |
-| **Overall** | **62.0%** | 15% | 100% | |
-
-**Key insight**: Similar scores across tasks = classification is the bottleneck, not task complexity 🎯
+Baseline execution: `python -m customer_support_env.baseline`  
+For reproducible official scores, use low-temperature mode or average multiple runs.
 
 ---
 
@@ -202,7 +194,7 @@ See `requirements.txt` for versions.
 ✅ **Real-world task**: Not games—actual support workflows  
 ✅ **Business metrics**: Enterprise penalties, SLA awareness, escalation logic  
 ✅ **OpenEnv compliant**: Full spec with typed models & deterministic episodes  
-✅ **Production-ready**: Dockerfile, error handling, reproducible evaluation  
+✅ **Research-ready**: Dockerfile, error handling, reproducible evaluation; stable for experiments  
 ✅ **Interpretable rewards**: Transparent grading with detailed feedback  
 
 ---
@@ -233,7 +225,7 @@ MIT - Use freely in research or production
 
 ---
 
-**Status**: ✅ Production-ready | **Updated**: March 2026
+**Status**: ✅ Stable research environment | **Last updated**: March 2026
 
 ### Files
 
@@ -261,8 +253,8 @@ MIT - Use freely in research or production
   - Standard OpenEnv endpoints: `/ws`, `/reset`, `/step`, `/state`, `/health`
 
 - **baseline.py** — Reference evaluation script
-  - gpt-4o-mini on 10 episodes per task
-  - Reproducible with seeded episodes
+  - Groq Llama-3.3-70b-versatile on full dataset sweep per task (30 episodes total)
+  - Reproducible with seeded episodes and task-specific temperature settings
   - JSON output with score statistics
 
 ### Tasks
@@ -373,7 +365,8 @@ Fields that do neither: remove them.
 
 - seed=episode_number guarantees same ticket each run
 - Can reproduce exact scores across machines
-- Verified with gpt-4o-mini
+- Verified with Groq Llama-3.3-70b-versatile
+- For official benchmarks, use single low-temperature pass or report multi-run mean ± std
 
 ## Extensibility
 

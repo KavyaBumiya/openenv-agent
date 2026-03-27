@@ -351,7 +351,7 @@ TICKETS = [
         "body": "In the API docs section 3.2, there's a typo: 'reciever' should be 'receiver'. Also, the example could be clearer if you showed error handling. Just wanted to flag this!",
         "tier": "free",
         "category": "general",
-        "priority": "medium",
+        "priority": "low",
         "department": "tier1",
         "previous_tickets": 2,
         "requires_escalation": False,

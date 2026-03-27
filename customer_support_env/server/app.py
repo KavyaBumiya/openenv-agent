@@ -135,16 +135,16 @@ async def get_grader():
                         "description": "Urgency assessment (graduated). Determines response tone and timeline.",
                     },
                     "department": {
-                        "weight": 0.15,
+                        "weight": 0.2,
                         "description": "Routing destination (binary). Ensures specialized expertise in response.",
                     },
                     "escalation": {
-                        "weight": 0.1,
+                        "weight": 0.15,
                         "description": "Escalation judgment (binary). Recognizes when supervisor sign-off needed.",
                     },
                     "response": {
-                        "weight": 0.4,
-                        "description": "Response quality (graduated by keyword presence + sentiment matching). Highest weight because this is the visible customer-facing output that impacts CSAT.",
+                        "weight": 0.3,
+                        "description": "Response quality (graduated by keyword presence + sentiment matching). Important because this is the visible customer-facing output that impacts CSAT.",
                     },
                 },
                 "total_weight": 1.0,
@@ -190,17 +190,43 @@ async def run_baseline():
                 "stdout": result.stdout,
             }
         
-        # Parse output (baseline.py should output JSON)
+        # Extract JSON from output (baseline.py may print logs before JSON)
+        # Try to parse entire output first, then fall back to extracting JSON
+        output_text = result.stdout.strip()
+        
         try:
-            output = json.loads(result.stdout)
+            # Try direct JSON parse first
+            output = json.loads(output_text)
             return {
                 "status": "success",
                 "results": output,
             }
         except json.JSONDecodeError:
+            # If that fails, try to extract JSON from output
+            # Look for the last JSON object delimited by { }
+            import re
+            
+            # Find all potential JSON objects (strings starting with { and ending with })
+            json_pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
+            matches = re.findall(json_pattern, output_text)
+            
+            if matches:
+                # Take the last (likely most complete) JSON object
+                last_json_str = matches[-1]
+                try:
+                    output = json.loads(last_json_str)
+                    return {
+                        "status": "success",
+                        "results": output,
+                    }
+                except json.JSONDecodeError:
+                    pass
+            
+            # If JSON extraction failed, return raw output
             return {
-                "status": "completed",
-                "output": result.stdout,
+                "status": "completed_but_unparseable",
+                "output": output_text,
+                "note": "Baseline completed but couldn't parse JSON from output. Check logs above.",
             }
     
     except subprocess.TimeoutExpired:
@@ -227,10 +253,11 @@ async def reset(req: ResetRequest):
         episode_id: Optional episode identifier for logging.
     
     Returns:
-        TicketObservation with subject, body, tier, task info.
+        Initial TicketObservation for the episode.
     """
     try:
         obs = _env.reset(task=req.task, seed=req.seed, episode_id=req.episode_id)
+        # For reset, return observation directly (no reward/done yet)
         return obs.model_dump()
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -248,7 +275,12 @@ async def step(req: StepRequest):
         response: Customer-facing response text (required for resolve task)
     
     Returns:
-        TicketObservation with reward, feedback, done flag.
+        {
+            "observation": {...ticket fields...},
+            "reward": float,
+            "done": bool
+        }
+        Structure matches client.py expectations for _parse_result()
     """
     try:
         action = TicketAction(
@@ -259,7 +291,18 @@ async def step(req: StepRequest):
             response=req.response,
         )
         obs = _env.step(action)
-        return obs.model_dump()
+        obs_dict = obs.model_dump()
+        
+        # Extract reward and done from observation (included in single-turn design)
+        reward = obs_dict.pop("reward", 0.0)
+        done = obs_dict.pop("done", True)
+        
+        # Return nested structure: observation separate from reward/done
+        return {
+            "observation": obs_dict,
+            "reward": reward,
+            "done": done,
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -320,7 +363,7 @@ async def websocket_endpoint(websocket: WebSocket):
       1. Client sends: {"action": "reset", "task": "classify", "seed": 0}
       2. Server responds: observation dict
       3. Client sends: {"action": "step", "category": "...", "priority": "..."}
-      4. Server responds: observation dict with reward and done=True
+      4. Server responds: {"observation": {...}, "reward": ..., "done": ...}
     """
     await websocket.accept()
     ws_env = CustomerSupportEnvironment()  # Each WebSocket gets its own env
@@ -347,7 +390,18 @@ async def websocket_endpoint(websocket: WebSocket):
                     response=data.get("response")
                 )
                 obs = ws_env.step(ticket_action)
-                await websocket.send_json(obs.model_dump())
+                obs_dict = obs.model_dump()
+                
+                # Extract reward and done from observation
+                reward = obs_dict.pop("reward", 0.0)
+                done = obs_dict.pop("done", True)
+                
+                # Send nested structure matching /step endpoint
+                await websocket.send_json({
+                    "observation": obs_dict,
+                    "reward": reward,
+                    "done": done,
+                })
             
             else:
                 await websocket.send_json({"error": f"Unknown action: {action_type}"})

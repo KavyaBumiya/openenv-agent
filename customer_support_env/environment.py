@@ -227,6 +227,13 @@ ESCALATION CRITERIA (requires_escalation=true):
         """Access current state (uses @property, no parentheses)."""
         return self._state
     
+    def get_state(self) -> TicketState:
+        """Get the current state (method form for OpenEnv compatibility).
+        
+        Returns the same state as the property.
+        """
+        return self.state
+    
     def _grade(self, action: TicketAction) -> float:
         """Score the action against ground truth, applying task-specific weights.
         

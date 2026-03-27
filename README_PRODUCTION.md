@@ -1,6 +1,6 @@
 # Customer Support Ticket Triage Environment
 
-**A production-grade OpenEnv reinforcement learning environment for training autonomous customer support agents.**
+**An OpenEnv reinforcement learning environment for researching and training autonomous customer support agents.**
 
 ## 📋 Overview
 
@@ -30,7 +30,7 @@ This environment simulates real-world customer support ticket triage—the task 
 - Category accuracy: 60%
 - Priority accuracy: 40%
 
-**Typical Performance**: 69.6% (human baseline with Llama 3.3-70b)
+**Typical Performance**: Variable (depends on prompting strategy and temperature)
 
 ---
 
@@ -60,7 +60,7 @@ This environment simulates real-world customer support ticket triage—the task 
 - `engineering`: Feature requests, bugs, performance issues
 - `management`: Escalated complaints, VIP retention, contract disputes
 
-**Typical Performance**: 62.5% (human baseline)
+**Typical Performance**: Variable (depends on prompting strategy and routing accuracy)
 
 ---
 
@@ -90,7 +90,7 @@ This environment simulates real-world customer support ticket triage—the task 
 - Sentiment awareness (frustrated customers → empathy bonus)
 - Completeness (missing response = -50% global penalty)
 
-**Typical Performance**: 53.8% (human baseline) — hardest task due to response generation
+**Typical Performance**: Variable (response generation is the main challenge)
 
 ---
 
@@ -106,11 +106,11 @@ Each ticket includes:
 
 | Category    | Count | Tiers       |
 |-------------|-------|-------------|
-| Billing     | 7     | free, premium, enterprise |
-| Technical   | 6     | premium, enterprise |
-| Account     | 8     | free, premium, enterprise |
-| General     | 6     | all |
-| Shipping    | 3     | premium |
+| Billing     | 6     | free, premium, enterprise |
+| Technical   | 7     | premium, enterprise |
+| Account     | 6     | free, premium, enterprise |
+| General     | 5     | all |
+| Shipping    | 6     | premium |
 
 ### Key Characteristics
 
@@ -279,9 +279,9 @@ from customer_support_env.models import TicketAction
 
 env = CustomerSupportEnvironment()
 
-# 30 episodes = 10 per task
+# 30 episodes = full dataset sweep per task
 for task in ["classify", "route", "resolve"]:
-    for episode in range(10):
+    for episode in range(30):
         obs = env.reset(seed=episode, task=task)
         
         # Your agent decides what to do
@@ -304,18 +304,20 @@ assert obs1.ticket_id == obs2.ticket_id  # True
 
 ---
 
-## 📈 Baseline Results
+## 📈 Baseline Evaluation
 
 **Model**: Groq Llama-3.3-70b-versatile  
 **Prompting**: Zero-shot (no examples)  
-**Episodes**: 30 total (10 × 3 tasks)
+**Episodes**: 30 total full-dataset sweep (all tickets, all 3 tasks)  
+**Temperature**: Task-specific (0.1 classify, 0.5 route, 0.7 resolve)
 
-| Task | Mean | Min | Max | Std |
-|------|------|-----|-----|-----|
-| Classify | 69.6% | 24% | 100% | 0.372 |
-| Route | 62.5% | 15% | 100% | 0.371 |
-| Resolve | 53.8% | 25% | 88% | 0.182 |
-| **Overall** | **62.0%** | 15% | 100% | - |
+To run baseline: `python -m customer_support_env.baseline`
+
+For reproducible official benchmarks:
+- Use low temperature (≤ 0.1) or
+- Run 3+ times and report mean ± std
+
+Note: High temperature values (0.5-0.7) increase variance and are useful for exploring agent robustness, but not recommended for official scoring.
 
 ### Interpretation
 
@@ -535,8 +537,10 @@ print(result.feedback)
 
 | Method | Classify | Route | Resolve | Overall |
 |--------|----------|-------|---------|---------|
-| Llama-3.3-70b (zero-shot) | 69.6% | 62.5% | 53.8% | 62.0% |
+| Llama-3.3-70b (low-temp zero-shot) | ~70% | ~60% | ~50% | ~60% |
 | Random guessing | 20% | 5% | 1% | 8.7% |
+
+*Note: Exact scores vary with temperature, seed sequence, and prompting strategy.*
 
 ### Key Performance Indicators
 
