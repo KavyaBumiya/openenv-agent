@@ -1,5 +1,6 @@
 """Customer support RL environment: the core game logic."""
 
+import logging
 import random
 import uuid
 from typing import Dict, Any
@@ -8,6 +9,9 @@ from .openenv_compat import Environment
 
 from .models import TicketAction, TicketObservation, TicketState
 from .data import TICKETS
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, TicketState]):
@@ -30,6 +34,39 @@ class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, Ti
         "route": "medium",
         "resolve": "hard",
     }
+    
+    # ============= GRADING CONFIGURATION PARAMETERS =============
+    # These constants control how actions are scored. Tune these to adjust difficulty.
+    
+    # Enterprise customer handling: penalize priority mistakes more for enterprise customers
+    ENTERPRISE_PRIORITY_PENALTY = 0.7  # Multiply score by this if enterprise + wrong priority
+    
+    # SLA urgency modeling: tickets open > 24h are SLA-critical
+    SLA_THRESHOLD_HOURS = 24
+    SLA_PENALTY_MULTIPLIER = 0.85  # Applied when SLA-critical + priority wrong
+    
+    # Response quality requirements (resolve task)
+    RESPONSE_MIN_LENGTH = 20  # Minimum characters to count as valid response
+    RESPONSE_LENGTH_PENALTY = 0.5  # Penalty multiplier if response too short
+    RESPONSE_KEYWORD_THRESHOLD = 0.75  # Must match this fraction of required keywords
+    RESPONSE_MIN_KEYWORDS_REQUIRED = 3  # Minimum keywords needed regardless of threshold
+    
+    # Response content penalties
+    RESPONSE_ACTION_PHRASE_PENALTY = 0.2  # Reduce score if no concrete action phrases
+    RESPONSE_FILLER_PENALTY = 0.3  # Reduce score if mostly filler content
+    
+    # Sentiment-aware response bonuses
+    SENTIMENT_EMPATHY_BONUS = 0.1  # Bonus for empathetic response when frustrated customer
+    
+    # Department fallback scoring (allow partial credit for reasonable alternatives)
+    DEPARTMENT_FALLBACK_SCORE = 0.4  # Score for tier1 → tier2 or tier2 ↔ engineering
+    DEPARTMENT_EXACT_SCORE = 1.0  # Score for exact match
+    
+    # Priority distance scoring
+    PRIORITY_EXACT_SCORE = 1.0
+    PRIORITY_ONE_STEP_SCORE = 0.6
+    PRIORITY_TWO_STEP_SCORE = 0.2
+    PRIORITY_THREE_PLUS_STEP_SCORE = 0.0
     
     # Reward weights per task (updated to include escalation)
     REWARD_WEIGHTS = {
@@ -263,6 +300,11 @@ ESCALATION CRITERIA (requires_escalation=true):
         gt_response_keywords = self._ticket.get("response_keywords", [])
         gt_escalation = self._ticket.get("requires_escalation", False)
         
+        ticket_id = self._ticket.get("id", "UNKNOWN")
+        logger.debug(f"Grading action for ticket {ticket_id} (task={self._task})")
+        logger.debug(f"  Prediction: category={category}, priority={priority}, dept={department}, escalation={action.requires_escalation}")
+        logger.debug(f"  Ground truth: category={gt_category}, priority={gt_priority}, dept={gt_department}, escalation={gt_escalation}")
+        
         # Score each component
         cat_score = 1.0 if category == gt_category else 0.0
         
@@ -277,6 +319,8 @@ ESCALATION CRITERIA (requires_escalation=true):
         
         # Response scoring with sentiment awareness
         resp_score = self._score_response(response, gt_response_keywords, self._ticket)
+        
+        logger.debug(f"  Component scores: cat={cat_score}, pri={pri_score}, dept={dept_score}, esc={escalation_score}, resp={resp_score}")
         
         # Apply task-specific weights
         if self._task == "classify":
@@ -304,10 +348,14 @@ ESCALATION CRITERIA (requires_escalation=true):
             
             # HARD task penalty: missing/inadequate response significantly hurts overall score
             # If response is missing or too short, apply multiplier penalty
-            if not response or len(response) < 20:
-                final_score *= 0.5  # 50% penalty for incomplete resolve attempts
+            if not response or len(response) < self.RESPONSE_MIN_LENGTH:
+                final_score *= self.RESPONSE_LENGTH_PENALTY  # Penalty for incomplete resolve attempts
+                logger.debug(f"Response penalty applied: too short ({len(response)} chars, min {self.RESPONSE_MIN_LENGTH})")
         
-        return round(final_score, 3)
+        final_score = round(final_score, 3)
+        logger.info(f"Final score for ticket {ticket_id}: {final_score:.3f} (task={self._task})")
+        
+        return final_score
     
     def _score_priority(self, predicted: str, actual: str, ticket: Dict[str, Any]) -> float:
         """Graduated priority scoring with enterprise customer awareness.
@@ -329,23 +377,24 @@ ESCALATION CRITERIA (requires_escalation=true):
             
             # Base score from priority distance
             if distance == 0:
-                base_score = 1.0
+                base_score = self.PRIORITY_EXACT_SCORE
             elif distance == 1:
-                base_score = 0.6
+                base_score = self.PRIORITY_ONE_STEP_SCORE
             elif distance == 2:
-                base_score = 0.2
+                base_score = self.PRIORITY_TWO_STEP_SCORE
             else:
-                base_score = 0.0
+                base_score = self.PRIORITY_THREE_PLUS_STEP_SCORE
             
             # Apply enterprise penalty: if enterprise + wrong priority, reduce score
             if ticket.get("tier") == "enterprise" and distance > 0:
-                base_score *= 0.7  # Enterprise customers: higher bar
+                base_score *= self.ENTERPRISE_PRIORITY_PENALTY
             
             # Apply SLA urgency penalty: long-open + wrong priority = bigger penalty
             open_hours = ticket.get("open_since_hours", 0)
-            if open_hours > 24 and distance > 0:
-                base_score *= 0.85  # Urgent latency visible in open_hours
+            if open_hours > self.SLA_THRESHOLD_HOURS and distance > 0:
+                base_score *= self.SLA_PENALTY_MULTIPLIER
             
+            logger.debug(f"Priority score: {base_score} (predicted={predicted}, actual={actual}, distance={distance})")
             return round(base_score, 2)
         
         except ValueError:
@@ -369,19 +418,20 @@ ESCALATION CRITERIA (requires_escalation=true):
             return 0.0
         
         if predicted == actual:
-            return 1.0
+            return self.DEPARTMENT_EXACT_SCORE
         
         # Reasonable fallback: tier1 instead of tier2
         if predicted == "tier1" and actual == "tier2":
-            return 0.4
+            return self.DEPARTMENT_FALLBACK_SCORE
 
         # Reasonable technical fallback between tier2 triage and engineering.
         if (predicted == "tier2" and actual == "engineering") or (
             predicted == "engineering" and actual == "tier2"
         ):
-            return 0.4
+            return self.DEPARTMENT_FALLBACK_SCORE
         
         # No fallback credit otherwise
+        logger.debug(f"Department score: 0.0 (predicted={predicted}, actual={actual}, no fallback)")
         return 0.0
     
     def _score_escalation(self, predicted: bool | None, actual: bool) -> float:
@@ -431,7 +481,7 @@ ESCALATION CRITERIA (requires_escalation=true):
         found_count = sum(1 for kw in required_keywords if _kw_match(kw, response_lower))
         
         # Require at least 3 out of N keywords, or 75% of them
-        threshold = max(3, int(len(required_keywords) * 0.75))
+        threshold = max(self.RESPONSE_MIN_KEYWORDS_REQUIRED, int(len(required_keywords) * self.RESPONSE_KEYWORD_THRESHOLD))
         
         # Base score from keyword coverage
         if found_count >= len(required_keywords):
@@ -441,18 +491,21 @@ ESCALATION CRITERIA (requires_escalation=true):
         elif found_count >= len(required_keywords) / 2:
             base_score = 0.3
         else:
+            logger.debug(f"Response insufficient keywords: {found_count}/{len(required_keywords)} (threshold={threshold})")
             return 0.0  # Too few keywords
 
         # Actionability requirement: concrete next-step phrasing should be present.
         action_phrases = ["we will", "next steps", "please", "within", "today", "hours", "days"]
         has_action_phrase = any(phrase in response_lower for phrase in action_phrases)
         if not has_action_phrase:
-            base_score = max(0.0, base_score - 0.2)
+            base_score = max(0.0, base_score - self.RESPONSE_ACTION_PHRASE_PENALTY)
+            logger.debug(f"Response missing action phrase: reducing score by {self.RESPONSE_ACTION_PHRASE_PENALTY}")
 
         # Penalize filler-heavy responses that game keywords without concrete content.
         filler_markers = ["as an ai", "cannot assist", "lorem", "blah", "template"]
         if any(marker in response_lower for marker in filler_markers):
-            base_score = max(0.0, base_score - 0.3)
+            base_score = max(0.0, base_score - self.RESPONSE_FILLER_PENALTY)
+            logger.debug(f"Response contains filler: reducing score by {self.RESPONSE_FILLER_PENALTY}")
         
         # Boost score if sentiment-matched
         sentiment = ticket.get("sentiment", "neutral").lower()
@@ -461,7 +514,8 @@ ESCALATION CRITERIA (requires_escalation=true):
         
         # Frustrated/angry customers → reward empathy
         if sentiment in ["frustrated", "angry", "distressed"] and has_empathy:
-            base_score = min(1.0, base_score + 0.1)  # Bonus for emotional intelligence
+            base_score = min(1.0, base_score + self.SENTIMENT_EMPATHY_BONUS)  # Bonus for emotional intelligence
+            logger.debug(f"Empathy bonus applied: +{self.SENTIMENT_EMPATHY_BONUS}")
         
         return round(base_score, 2)
     

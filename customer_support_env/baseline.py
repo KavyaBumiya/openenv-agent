@@ -13,45 +13,102 @@ import json
 import sys
 import os
 import re
+import logging
 
 from customer_support_env.environment import CustomerSupportEnvironment
 from customer_support_env.models import TicketAction
 from customer_support_env.data import TICKETS
 
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
-def extract_json(text: str) -> dict:
-    """Robustly extract JSON from LLM output, handling markdown fences.
+
+def extract_json(text: str, expected_keys: list = None) -> dict:
+    """Robustly extract JSON from LLM output with validation.
     
-    LLMs sometimes wrap JSON in ```json ... ``` blocks.
-    This function handles both clean JSON and fenced JSON gracefully.
+    Args:
+        text: Raw LLM response text
+        expected_keys: List of required keys in JSON (e.g., ["category", "priority"])
+    
+    Returns:
+        Validated JSON dictionary
+    
+    Raises:
+        ValueError: If JSON cannot be extracted or validated
     """
     if not text:
         raise ValueError("Empty response from LLM")
     
-    # First, try the happy path: raw JSON
     text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
+    errors = []
     
-    # Second, strip markdown fences (```json ... ``` or ``` ... ```)
-    fence_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
+    # Strategy 1: Direct JSON parse (fast path)
+    try:
+        data = json.loads(text)
+        _validate_json_structure(data, expected_keys)
+        logger.debug("Successfully extracted JSON via direct parse")
+        return data
+    except (json.JSONDecodeError, ValueError) as e:
+        errors.append(f"Direct parse: {e}")
+        logger.debug(f"Direct parse failed: {e}")
+    
+    # Strategy 2: Markdown code fence (```json ... ```)
+    fence_match = re.search(r'```(?:json)?\s+([\s\S]*?)\s+```', text)
     if fence_match:
         try:
-            return json.loads(fence_match.group(1))
-        except json.JSONDecodeError:
-            pass
+            data = json.loads(fence_match.group(1))
+            _validate_json_structure(data, expected_keys)
+            logger.debug("Successfully extracted JSON via markdown fence")
+            return data
+        except (json.JSONDecodeError, ValueError) as e:
+            errors.append(f"Markdown fence: {e}")
+            logger.debug(f"Fence parse failed: {e}")
     
-    # Third, find the outermost JSON object with a greedy search
-    brace_match = re.search(r'\{[\s\S]*\}', text)
-    if brace_match:
+    # Strategy 3: Find JSON objects (non-greedy, try each match)
+    # Use non-greedy matching to avoid grabbing too much text
+    for match in re.finditer(r'\{(?:[^{}]|(?:\{[^{}]*\}))*\}', text):
         try:
-            return json.loads(brace_match.group())
-        except json.JSONDecodeError:
-            pass
+            extracted_text = match.group()
+            data = json.loads(extracted_text)
+            _validate_json_structure(data, expected_keys)
+            logger.debug(f"Successfully extracted JSON from object search")
+            return data
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.debug(f"Object search attempt failed: {e}")
+            continue
     
-    raise ValueError(f"Could not extract valid JSON from: {text[:200]}")
+    # All strategies failed
+    error_summary = "; ".join(errors)
+    error_msg = f"Could not extract valid JSON from LLM response. Strategies tried: {error_summary}"
+    logger.error(f"{error_msg}\nOriginal response: {text[:300]}...")
+    raise ValueError(error_msg)
+
+
+def _validate_json_structure(data: dict, required_keys: list = None) -> None:
+    """Validate that extracted JSON has correct structure.
+    
+    Args:
+        data: Dictionary to validate
+        required_keys: List of keys that must exist
+    
+    Raises:
+        ValueError: If validation fails
+    """
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected JSON object, got {type(data).__name__}")
+    
+    if required_keys:
+        missing = set(required_keys) - set(data.keys())
+        if missing:
+            raise ValueError(f"Missing required keys: {missing}")
+    
+    # Validate values (check for null/empty)
+    for key, value in data.items():
+        if isinstance(value, str) and not value.strip():
+            raise ValueError(f"Field '{key}' cannot be empty string")
+        elif value is None:
+            raise ValueError(f"Field '{key}' cannot be null")
 
 
 def run_baseline(mode="official"):
@@ -148,7 +205,18 @@ def run_baseline(mode="official"):
                 response_text = response.choices[0].message.content
                 if response_text is None:
                     raise ValueError("Groq response content is None")
-                action_dict = extract_json(response_text)
+                
+                # Expected keys for this task
+                expected_keys_map = {
+                    "classify": ["category", "priority"],
+                    "route": ["category", "priority", "department"],
+                    "resolve": ["category", "priority", "department", "response"],
+                }
+                expected_keys = expected_keys_map.get(task, [])
+                
+                # Extract and validate JSON
+                action_dict = extract_json(response_text, expected_keys=expected_keys)
+                logger.debug(f"Episode {episode}: Extracted action - {action_dict}")
                 
                 # Convert to TicketAction
                 action = TicketAction(

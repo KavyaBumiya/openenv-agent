@@ -3,37 +3,64 @@
 import json
 import subprocess
 import os
-from typing import Optional
-from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+import sys
+import logging
+import uuid
+from typing import Optional, Dict, Tuple, Literal
+from pydantic import BaseModel, Field
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from ..openenv_compat import create_fastapi_app
 
 from ..environment import CustomerSupportEnvironment
-from ..models import TicketAction
+from ..models import TicketAction, TicketObservation
 
+# Configure logging
+logger = logging.getLogger(__name__)
 
-# Create base app with standard endpoints (/ws, /reset, /step, /state, /health)
+# Create base app and register environment routes below.
 app = create_fastapi_app(CustomerSupportEnvironment)
 
 
 # ============= REQUEST/RESPONSE MODELS =============
 
 class ResetRequest(BaseModel):
-    task: str = "classify"
-    seed: Optional[int] = None
-    episode_id: Optional[str] = None
+    task: Literal["classify", "route", "resolve"] = Field(
+        "classify",
+        description="Task: classify, route, or resolve",
+    )
+    seed: Optional[int] = Field(None, description="Random seed for reproducibility (0-29)")
+    episode_id: Optional[str] = Field(None, description="Optional episode identifier")
+    session_id: Optional[str] = Field(None, description="Optional session ID")
 
 
 class StepRequest(BaseModel):
-    category: str
-    priority: str
-    department: Optional[str] = None
-    requires_escalation: Optional[bool] = None
-    response: Optional[str] = None
+    session_id: str = Field(..., description="Session ID from /reset response")
+    category: Literal["billing", "technical", "account", "shipping", "general"] = Field(
+        ...,
+        description="Ticket category",
+    )
+    priority: Literal["low", "medium", "high", "urgent"] = Field(..., description="Priority level")
+    department: Optional[Literal["tier1", "tier2", "billing", "engineering", "management"]] = Field(
+        None,
+        description="Routing department",
+    )
+    requires_escalation: Optional[bool] = Field(None, description="Escalation flag")
+    response: Optional[str] = Field(None, max_length=5000, description="Response text (max 5000 chars)")
 
 
-# Global environment instance for REST endpoints
-_env = CustomerSupportEnvironment()
+# ============= SESSION MANAGEMENT =============
+# Store per-session environments to avoid cross-user interference
+_sessions: Dict[str, Tuple[CustomerSupportEnvironment, Optional[TicketObservation]]] = {}
+
+def _cleanup_old_sessions(max_sessions: int = 100) -> None:
+    """Clean up oldest sessions if limit exceeded."""
+    if len(_sessions) > max_sessions:
+        # Remove oldest 20% of sessions
+        remove_count = max_sessions // 5
+        keys_to_remove = list(_sessions.keys())[:remove_count]
+        for key in keys_to_remove:
+            del _sessions[key]
+            logger.debug(f"Cleaned up old session: {key}")
 
 
 
@@ -175,12 +202,14 @@ async def run_baseline():
     try:
         # Run baseline.py in subprocess
         # Change to project directory to ensure imports work
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
         result = subprocess.run(
-            ["python", "-m", "customer_support_env.baseline"],
+            [sys.executable, "-m", "customer_support_env.baseline"],
             capture_output=True,
             text=True,
             timeout=300,  # 5 minute timeout
-            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            cwd=project_root,
         )
         
         if result.returncode != 0:
@@ -251,16 +280,41 @@ async def reset(req: ResetRequest):
         task: Task type (classify, route, resolve). Defaults to "classify".
         seed: Random seed for reproducibility (0-29). If None, uses random.
         episode_id: Optional episode identifier for logging.
+        session_id: Optional session ID. If not provided, generates new one.
     
     Returns:
-        Initial TicketObservation for the episode.
+        {
+            "session_id": "...",
+            "observation": {...ticket fields...}
+        }
     """
     try:
-        obs = _env.reset(task=req.task, seed=req.seed, episode_id=req.episode_id)
-        # For reset, return observation directly (no reward/done yet)
-        return obs.model_dump()
-    except Exception as e:
+        # Create or reuse session
+        session_id = req.session_id or str(uuid.uuid4())
+        
+        # Create new environment for this session
+        env = CustomerSupportEnvironment()
+        obs = env.reset(task=req.task, seed=req.seed, episode_id=req.episode_id)
+        
+        # Store in session map
+        _sessions[session_id] = (env, obs)
+        
+        # Cleanup if too many sessions
+        _cleanup_old_sessions()
+        
+        logger.info(f"Reset session {session_id}: task={req.task}, seed={req.seed}")
+        
+        # Return observation with session ID
+        return {
+            "session_id": session_id,
+            "observation": obs.model_dump()
+        }
+    except ValueError as e:
+        logger.warning(f"Validation error in /reset: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected error in /reset: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/step")
@@ -268,11 +322,12 @@ async def step(req: StepRequest):
     """Submit action and receive reward.
     
     Args:
+        session_id: Session ID from /reset response (required)
         category: Ticket classification (billing, technical, account, general, shipping)
         priority: Urgency level (low, medium, high, urgent)
         department: Routing destination (tier1, tier2, billing, engineering, management)
         requires_escalation: Whether to flag for supervisor review (boolean)
-        response: Customer-facing response text (required for resolve task)
+        response: Customer-facing response text (required for resolve task, max 5000 chars)
     
     Returns:
         {
@@ -280,9 +335,20 @@ async def step(req: StepRequest):
             "reward": float,
             "done": bool
         }
-        Structure matches client.py expectations for _parse_result()
     """
+    # Validate session exists
+    if req.session_id not in _sessions:
+        logger.warning(f"Step request for invalid session: {req.session_id}")
+        raise HTTPException(status_code=404, detail=f"Session not found: {req.session_id}")
+    
     try:
+        env, obs = _sessions[req.session_id]
+        
+        # Validate response length
+        if req.response and len(req.response) > 5000:
+            raise ValueError("Response exceeds maximum length of 5000 characters")
+        
+        # Create action
         action = TicketAction(
             category=req.category,
             priority=req.priority,
@@ -290,12 +356,19 @@ async def step(req: StepRequest):
             requires_escalation=req.requires_escalation,
             response=req.response,
         )
-        obs = _env.step(action)
+        
+        # Step environment
+        obs = env.step(action)
         obs_dict = obs.model_dump()
         
         # Extract reward and done from observation (included in single-turn design)
         reward = obs_dict.pop("reward", 0.0)
         done = obs_dict.pop("done", True)
+        
+        # Update session
+        _sessions[req.session_id] = (env, obs)
+        
+        logger.debug(f"Step session {req.session_id}: reward={reward:.3f}")
         
         # Return nested structure: observation separate from reward/done
         return {
@@ -303,26 +376,39 @@ async def step(req: StepRequest):
             "reward": reward,
             "done": done,
         }
-    except Exception as e:
+    except ValueError as e:
+        logger.warning(f"Validation error in /step for session {req.session_id}: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected error in /step for session {req.session_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/state")
-async def state():
-    """Get current environment state.
+async def state(session_id: str = Query(..., description="Session ID from /reset response")):
+    """Get current environment state for a session.
+    
+    Args:
+       session_id: Session ID from /reset response
     
     Returns:
         TicketState with current ticket, task, step count, etc.
         Also includes current_ticket_id for debugging seed-based reproducibility.
     """
+    if session_id not in _sessions:
+        logger.warning(f"State request for invalid session: {session_id}")
+        raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
+    
     try:
-        state_dict = _env.state.model_dump()
+        env, obs = _sessions[session_id]
+        state_dict = env.state.model_dump()
         # Add the current ticket ID so agents can verify which ticket is active
-        if _env._ticket is not None:
-            state_dict["current_ticket_id"] = _env._ticket["id"]
+        if env._ticket is not None:
+            state_dict["current_ticket_id"] = env._ticket["id"]
         return state_dict
-    except AttributeError:
-        raise HTTPException(status_code=400, detail="Environment not initialized. Call /reset first.")
+    except Exception as e:
+        logger.error(f"Error getting state for session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
 async def root():

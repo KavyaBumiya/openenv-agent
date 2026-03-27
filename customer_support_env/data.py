@@ -7,6 +7,106 @@ Design philosophy:
 - Distribution designed for learning
 """
 
+import sys
+
+# Define required fields and allowed values for validation
+REQUIRED_TICKET_FIELDS = {
+    "id": str,
+    "subject": str,
+    "body": str,
+    "tier": str,
+    "category": str,
+    "priority": str,
+    "department": str,
+    "previous_tickets": int,
+    "requires_escalation": bool,
+    "open_since_hours": int,
+    "sentiment": str,
+    "response_keywords": list,
+}
+
+ALLOWED_VALUES = {
+    "tier": ["free", "premium", "enterprise"],
+    "category": ["billing", "technical", "account", "shipping", "general"],
+    "priority": ["low", "medium", "high", "urgent"],
+    "department": ["tier1", "tier2", "billing", "engineering", "management"],
+    "sentiment": ["frustrated", "angry", "positive", "neutral", "confused", "urgent"],
+}
+
+def validate_tickets() -> None:
+    """Validate all tickets have required fields with correct types and values.
+    
+    Raises:
+        ValueError: If any ticket is invalid (printed to stderr before exit)
+    """
+    if not TICKETS:
+        error_msg = "VALIDATION FAILED: TICKETS list is empty"
+        print(f"❌ {error_msg}\n", file=sys.stderr)
+        raise ValueError(error_msg)
+    
+    errors = []
+    
+    for idx, ticket in enumerate(TICKETS):
+        ticket_errors = []
+        
+        # Check that it's a dict
+        if not isinstance(ticket, dict):
+            ticket_errors.append(f"must be dict, got {type(ticket).__name__}")
+        else:
+            # Check all required fields exist and have correct types
+            for field, field_type in REQUIRED_TICKET_FIELDS.items():
+                if field not in ticket:
+                    ticket_errors.append(f"missing required field '{field}'")
+                else:
+                    value = ticket[field]
+                    
+                    # Check type
+                    if not isinstance(value, field_type):
+                        ticket_errors.append(
+                            f"field '{field}' must be {field_type.__name__}, "
+                            f"got {type(value).__name__}: {repr(value)}"
+                        )
+                    else:
+                        # Check allowed values (if applicable)
+                        if field in ALLOWED_VALUES:
+                            allowed = ALLOWED_VALUES[field]
+                            if value not in allowed:
+                                ticket_errors.append(
+                                    f"field '{field}' = '{value}' not in allowed values: {allowed}"
+                                )
+                        
+                        # Additional content validation
+                        if field == "subject" and len(value.strip()) < 5:
+                            ticket_errors.append(f"field 'subject' too short (min 5 chars)")
+                        
+                        if field == "body" and len(value.strip()) < 20:
+                            ticket_errors.append(f"field 'body' too short (min 20 chars)")
+                        
+                        if field == "previous_tickets" and value < 0:
+                            ticket_errors.append(f"field 'previous_tickets' must be >= 0")
+                        
+                        if field == "open_since_hours" and value < 0:
+                            ticket_errors.append(f"field 'open_since_hours' must be >= 0")
+                        
+                        if field == "response_keywords":
+                            if len(value) < 2:
+                                ticket_errors.append(f"field 'response_keywords' must have >= 2 items")
+                            if not all(isinstance(kw, str) for kw in value):
+                                ticket_errors.append(f"field 'response_keywords' must contain only strings")
+        
+        if ticket_errors:
+            ticket_id = ticket.get("id", "UNKNOWN") if isinstance(ticket, dict) else "UNKNOWN"
+            errors.append(f"Ticket #{idx} ({ticket_id}): " + "; ".join(ticket_errors))
+    
+    # If there are any errors, report them all and exit
+    if errors:
+        error_msg = f"VALIDATION FAILED: Found {len(errors)} error(s) in TICKETS\n" + "\n".join(errors)
+        print(f"❌ {error_msg}\n", file=sys.stderr)
+        raise ValueError(error_msg)
+    
+    # All tickets valid
+    print(f"✓ TICKETS validation passed: {len(TICKETS)} tickets OK")
+
 TICKETS = [
     # ============= BILLING TICKETS (×7) =============
     {
@@ -471,9 +571,17 @@ TICKETS = [
     },
 ]
 
+# ============= VALIDATION AT MODULE LOAD =============
+# Run validation when module is imported to catch data errors early
+try:
+    validate_tickets()
+except ValueError as e:
+    # Validation failed - exit immediately
+    sys.exit(1)
+
 # Verification checks (run locally to validate)
 if __name__ == "__main__":
-    print(f"Total tickets: {len(TICKETS)}")
+    print(f"\nTotal tickets: {len(TICKETS)}")
     
     # Distribution check
     categories = {}

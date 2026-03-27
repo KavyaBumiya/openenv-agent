@@ -24,14 +24,14 @@ from customer_support_env.models import TicketAction
 from customer_support_env.baseline import run_baseline as run_shared_baseline
 
 
-def run_baseline():
+def run_baseline(mode: str = "official"):
     """Run the shared baseline evaluation workflow."""
     print("\n" + "=" * 80)
     print("BASELINE EVALUATION")
     print("=" * 80)
 
     try:
-        run_shared_baseline()
+        run_shared_baseline(mode=mode)
     except SystemExit:
         # baseline.py uses sys.exit for missing API/dependency checks.
         pass
@@ -238,6 +238,12 @@ Examples:
         """
     )
     parser.add_argument("command", nargs="?", help="Command to run")
+    parser.add_argument(
+        "--mode",
+        choices=["official", "training"],
+        default="official",
+        help="Baseline mode when command=baseline",
+    )
     args = parser.parse_args()
     
     if not args.command:
@@ -245,7 +251,7 @@ Examples:
         return
     
     if args.command == "baseline":
-        run_baseline()
+        run_baseline(mode=args.mode)
     elif args.command == "server":
         run_server()
     elif args.command == "test":
