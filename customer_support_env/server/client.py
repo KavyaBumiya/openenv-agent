@@ -45,6 +45,7 @@ class CustomerSupportClient(EnvClient[TicketAction, TicketObservation, TicketSta
             action_schema=obs_data.get("action_schema", "{}"),
             policy_excerpt=obs_data.get("policy_excerpt", ""),
             feedback=obs_data.get("feedback", ""),
+            previous_tickets=obs_data.get("previous_tickets", 0),
         )
         
         return StepResult(

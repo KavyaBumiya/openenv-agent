@@ -21,6 +21,10 @@ class Action(BaseModel):
 class Observation(BaseModel):
     """Base class for environment observations."""
     model_config = ConfigDict(extra='forbid')
+    
+    def __init__(self, **data: Any) -> None:
+        """Initialize observation with validated fields."""
+        super().__init__(**data)
 
 
 class State(BaseModel):
