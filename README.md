@@ -297,7 +297,7 @@ All tasks require the agent to correctly classify tickets, but with increasing c
 
 3. **Resolve** (Hard)
    - Agent outputs: category, priority, department, escalation flag (optional), response
-   - Weights: category 20%, priority 15%, department 15%, escalation 10%, response 40%
+   - Weights: category 20%, priority 15%, department 20%, escalation 15%, response 30%
 
 ### Reward Design
 

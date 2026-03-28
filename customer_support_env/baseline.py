@@ -20,7 +20,7 @@ from customer_support_env.models import TicketAction
 from customer_support_env.data import TICKETS
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 

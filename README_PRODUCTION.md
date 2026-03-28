@@ -225,9 +225,9 @@ REWARD_WEIGHTS = {
     "resolve": {
         "category": 0.2,
         "priority": 0.15,
-        "department": 0.15,
-        "escalation": 0.1,
-        "response": 0.4,
+        "department": 0.2,
+        "escalation": 0.15,
+        "response": 0.3,
     }
 }
 ```
