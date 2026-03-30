@@ -16,6 +16,13 @@ import os
 import sys
 import argparse
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # Load from .env file
+except ImportError:
+    pass  # dotenv not installed
+
 # Ensure environment is in path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

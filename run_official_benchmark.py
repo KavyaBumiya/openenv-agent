@@ -17,7 +17,7 @@ Usage:
     python run_official_benchmark.py
 
 Requirements:
-    - GROQ_API_KEY environment variable set
+    - GROQ_API_KEY environment variable set (or .env file)
     - groq Python package installed
     - All customer_support_env files present
 
@@ -29,6 +29,13 @@ Output:
 
 import sys
 import os
+
+# Load .env file if it exists
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # Load from .env file in current directory
+except ImportError:
+    pass  # dotenv not installed, skip
 
 # Ensure we can import from the environment
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

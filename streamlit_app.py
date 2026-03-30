@@ -15,6 +15,13 @@ import random
 from datetime import datetime
 from typing import Optional, Dict, Any, Literal, cast
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # Load from .env file
+except ImportError:
+    pass  # dotenv not installed, skip
+
 import streamlit as st
 import pandas as pd
 from streamlit_option_menu import option_menu
@@ -25,6 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from customer_support_env.environment import CustomerSupportEnvironment
 from customer_support_env.models import TicketAction
 from customer_support_env.data import TICKETS
+from customer_support_env.baseline import _build_prompt, extract_json
 
 # ============================================================================
 # PAGE CONFIGURATION
@@ -97,6 +105,12 @@ if "total_reward" not in st.session_state:
 if "last_result" not in st.session_state:
     st.session_state.last_result = None
 
+if "auto_action" not in st.session_state:
+    st.session_state.auto_action = None
+
+if "auto_response_text" not in st.session_state:
+    st.session_state.auto_response_text = None
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -149,6 +163,75 @@ def get_task_description(task: str) -> str:
 def get_task_difficulty(task: str) -> str:
     """Get the difficulty level of a task."""
     return st.session_state.env.DIFFICULTY_MAP.get(task, "Unknown")
+
+def auto_generate_action(task: str, obs) -> Optional[TicketAction]:
+    """Auto-generate an action using Groq API based on the observation.
+    
+    Returns None if API key not set or error occurs, otherwise returns TicketAction.
+    """
+    try:
+        from groq import Groq
+    except ImportError:
+        st.error("❌ Groq SDK not installed. Run: pip install groq")
+        return None
+    
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        st.error("❌ GROQ_API_KEY environment variable not set. Please set it to use Auto Agent.")
+        return None
+    
+    with st.spinner("🤖 AI Agent thinking..."):
+        try:
+            client = Groq(api_key=api_key)
+            
+            # Build prompt using baseline logic
+            prompt = _build_prompt(task, obs)
+            
+            # Determine temperature based on task
+            temp_map = {"classify": 0.1, "route": 0.5, "resolve": 0.7}
+            temperature = temp_map.get(task, 0.1)
+            
+            # Call Groq
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=temperature,
+                timeout=30,
+            )
+            
+            response_text = response.choices[0].message.content
+            if response_text is None:
+                st.error("❌ Groq returned empty response")
+                return None
+            
+            # Extract JSON with expected keys for this task
+            expected_keys_map = {
+                "classify": ["category", "priority"],
+                "route": ["category", "priority", "department"],
+                "resolve": ["category", "priority", "department", "response"],
+            }
+            expected_keys = expected_keys_map.get(task, [])
+            
+            action_dict = extract_json(response_text, expected_keys=expected_keys)
+            
+            # Create TicketAction
+            action = TicketAction(
+                category=action_dict.get("category", ""),
+                priority=action_dict.get("priority", ""),
+                department=action_dict.get("department"),
+                response=action_dict.get("response"),
+                requires_escalation=action_dict.get("requires_escalation", False),
+            )
+            
+            # Store generated data in session for display
+            st.session_state.auto_action = action
+            st.session_state.auto_response_text = response_text
+            
+            return action
+        
+        except Exception as e:
+            st.error(f"❌ Error generating action: {str(e)}")
+            return None
 
 # ============================================================================
 # MAIN LAYOUT
@@ -308,8 +391,8 @@ if page == "Interactive Demo":
                     placeholder="Enter your response here..."
                 )
         
-        # Submit action button
-        col1, col2, col3 = st.columns([1, 1, 2])
+        # Action buttons row
+        col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
         with col1:
             if st.button("✅ Submit Action", type="primary", use_container_width=True):
                 action = TicketAction(
@@ -323,11 +406,58 @@ if page == "Interactive Demo":
                 st.rerun()
         
         with col2:
+            if st.button("🤖 Auto Agent", use_container_width=True):
+                auto_action = auto_generate_action(task, st.session_state.current_observation)
+                if auto_action:
+                    st.session_state.auto_action = auto_action
+                    st.rerun()
+        
+        with col3:
             if st.button("⏭️ Skip", use_container_width=True):
                 reset_environment(task=task)
+                st.session_state.auto_action = None
+                st.rerun()
+        
+        with col4:
+            if st.button("🗑️ Clear Auto", use_container_width=True, disabled=st.session_state.auto_action is None):
+                st.session_state.auto_action = None
                 st.rerun()
         
         st.divider()
+        
+        # Display auto-generated action if available
+        if st.session_state.auto_action:
+            st.success("✅ **Auto Agent Generated Action:**")
+            
+            auto_action = st.session_state.auto_action
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.write(f"**Category:** `{auto_action.category}`")
+                st.write(f"**Priority:** `{auto_action.priority}`")
+                if auto_action.department:
+                    st.write(f"**Department:** `{auto_action.department}`")
+                if auto_action.requires_escalation:
+                    st.write("**Escalation:** ⚠️ Flagged for escalation")
+            
+            with col2:
+                if auto_action.response:
+                    st.write(f"**Response:**")
+                    st.text_area("", value=auto_action.response, disabled=True, height=80)
+            
+            # Submit auto action
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("💾 Accept & Submit Auto", type="primary", use_container_width=True):
+                    result = process_action(auto_action)
+                    st.session_state.auto_action = None
+                    st.rerun()
+            with col2:
+                if st.button("❌ Reject Auto", use_container_width=True):
+                    st.session_state.auto_action = None
+                    st.rerun()
+            
+            st.divider()
         
         # Display result if action was taken
         if st.session_state.current_action and st.session_state.last_result:

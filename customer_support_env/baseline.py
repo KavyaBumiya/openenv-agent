@@ -15,6 +15,13 @@ import os
 import re
 import logging
 
+# Load .env file if it exists
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # Load from .env file in current directory
+except ImportError:
+    pass  # dotenv not installed, skip
+
 from customer_support_env.environment import CustomerSupportEnvironment
 from customer_support_env.models import TicketAction
 from customer_support_env.data import TICKETS

@@ -1,0 +1,12 @@
+{
+  "title": "Customer Support RL Environment - Auto Agent",
+  "emoji": "🎫",
+  "colorFrom": "blue",
+  "colorTo": "purple",
+  "sdk": "docker",
+  "app_port": 8501,
+  "pinned": false,
+  "license": "mit",
+  "repo_url": "https://huggingface.co/spaces/kavyabumiya/customer-support-env",
+  "tags": ["reinforcement-learning", "customer-support", "agent", "streamlit", "llm"]
+}
