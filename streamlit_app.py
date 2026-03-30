@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Customer Support RL Environment - 100% LLM API-Driven Testing UI
+Customer Support RL Environment - 100% AI-Powered Testing UI
 
-Fully automated LLM testing. No manual testing interface.
-Supports any LLM provider: Groq, GPT, Claude, etc.
+All features (Demo, Testing, Batch, Stats) are AI/LLM-driven.
+No manual input required - AI handles everything.
 
 Run with: streamlit run streamlit_app.py
 """
@@ -13,7 +13,7 @@ import sys
 import json
 import random
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Literal, cast
 
 # Load environment variables from .env file
 try:
@@ -71,6 +71,15 @@ if "total_episodes" not in st.session_state:
 
 if "total_reward" not in st.session_state:
     st.session_state.total_reward = 0.0
+
+if "current_observation" not in st.session_state:
+    st.session_state.current_observation = None
+
+if "current_task" not in st.session_state:
+    st.session_state.current_task = None
+
+if "ai_generated_action" not in st.session_state:
+    st.session_state.ai_generated_action = None
 
 # ============================================================================
 # HELPER FUNCTIONS
@@ -186,12 +195,12 @@ def generate_llm_action(task: str, obs, llm_provider: str = "groq") -> Optional[
 # ============================================================================
 
 with st.sidebar:
-    st.title("🤖 LLM Testing")
+    st.title("🤖 AI Testing")
     
     page = option_menu(
         "Menu",
-        ["Auto-Test", "Statistics", "Testing & Verification", "Settings"],
-        icons=["play-circle", "bar-chart", "flask-conical", "gear"],
+        ["AI Interactive Demo", "AI Batch Testing", "Statistics", "Testing & Verification", "Settings"],
+        icons=["play-circle", "speedometer", "bar-chart", "flask-conical", "gear"],
         menu_icon="cast",
         default_index=0,
     )
@@ -211,62 +220,227 @@ with st.sidebar:
         st.metric("Avg Reward", f"{avg_reward:.1%}")
 
 # ============================================================================
-# PAGE: AUTO-TEST (LLM-Powered)
+# PAGE: AI INTERACTIVE DEMO (AI Generates Everything)
 # ============================================================================
 
-if page == "Auto-Test":
-    st.title("🤖 Automated LLM Testing")
-    st.markdown("100% API-driven testing. LLM models handle all decisions - no manual input.")
+if page == "AI Interactive Demo":
+    st.title("🤖 AI Interactive Demo")
+    st.markdown("AI automatically processes tickets. Watch it make decisions in real-time.")
     
     # Info box
     st.info("""
-    ✨ **Fully Automated**
-    - LLM API generates all actions
-    - No manual testing required
-    - Real-time results
-    - Supports: Groq (free tier), GPT, Claude, etc.
+    🧠 **Fully AI-Powered**
+    - AI generates category, priority, department, response
+    - No manual input needed
+    - Watch AI reasoning in real-time
+    - Click button → AI processes ticket
     """)
     
     st.divider()
     
-    # Configuration
+    # Task selection
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        task = st.radio(
+            "Task",
+            ["classify", "route", "resolve"],
+            horizontal=True
+        )
+    with col2:
+        st.write("")
+        if st.button("🔄 Load New Ticket", use_container_width=True):
+            obs = st.session_state.env.reset(seed=random.randint(0, 9999), task=task)
+            st.session_state.current_observation = obs
+            st.session_state.current_task = task
+            st.session_state.ai_generated_action = None
+            st.rerun()
+    
+    with col3:
+        st.write("")
+        if st.button("🗑️ Clear History", use_container_width=True):
+            st.session_state.test_results = []
+            st.session_state.total_episodes = 0
+            st.session_state.total_reward = 0.0
+            st.success("Cleared!")
+            st.rerun()
+    
+    st.divider()
+    
+    # Display ticket
+    if st.session_state.current_observation:
+        obs = st.session_state.current_observation
+        
+        with st.expander("📋 Ticket Details", expanded=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write(f"**ID:** `{obs.ticket_id}`")
+                st.write(f"**Tier:** {obs.sender_tier.title() if obs.sender_tier else 'N/A'}")
+                st.write(f"**Sentiment:** {obs.sentiment.title() if obs.sentiment else 'N/A'}")
+                st.write(f"**Open Since:** {obs.open_since_hours}h ago")
+            with col2:
+                st.write(f"**Previous Tickets:** {obs.previous_tickets}")
+                st.write(f"**Task:** {task.title()}")
+            
+            st.write(f"**Subject:** {obs.subject}")
+            st.write("**Body:**")
+            st.text_area("", value=obs.body, disabled=True, height=100)
+        
+        st.divider()
+        
+        # AI Decision Section
+        st.subheader("🧠 AI Decision-Making")
+        
+        if st.button("🚀 Let AI Decide", type="primary", use_container_width=True, key="ai_demo_button"):
+            with st.spinner("AI thinking..."):
+                action_dict = generate_llm_action(task, obs, "groq")
+            
+            if action_dict:
+                # Create action
+                action = TicketAction(
+                    category=action_dict.get("category", ""),
+                    priority=action_dict.get("priority", ""),
+                    department=action_dict.get("department"),
+                    response=action_dict.get("response"),
+                    requires_escalation=action_dict.get("requires_escalation", False),
+                )
+                st.session_state.ai_generated_action = action
+                st.rerun()
+        
+        # Display AI-generated action
+        if st.session_state.ai_generated_action:
+            action = st.session_state.ai_generated_action
+            
+            st.success("✅ **AI Chose:**")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown(f"📌 **Category:** `{action.category.title()}`")
+                st.markdown(f"⚡ **Priority:** `{action.priority.title()}`")
+                if action.department:
+                    st.markdown(f"🏢 **Department:** `{action.department.title()}`")
+                if action.requires_escalation:
+                    st.markdown("🚨 **Escalation:** Flagged")
+            
+            with col2:
+                if action.response:
+                    st.markdown("💬 **AI Response:**")
+                    st.text_area("", value=action.response, disabled=True, height=80)
+            
+            # Submit action
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ Accept & Submit", type="primary", use_container_width=True, key="accept_ai"):
+                    result = st.session_state.env.step(action)
+                    
+                    # Store result
+                    st.session_state.total_episodes += 1
+                    st.session_state.total_reward += result.reward
+                    
+                    episode_data = {
+                        "status": "success",
+                        "task": task,
+                        "reward": float(result.reward),
+                        "action": {
+                            "category": action.category,
+                            "priority": action.priority,
+                            "department": action.department,
+                            "response": action.response[:50] if action.response else None,
+                        },
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    st.session_state.test_results.append(episode_data)
+                    
+                    st.success(f"✅ Score: **{result.reward:.1%}**")
+                    st.session_state.ai_generated_action = None
+                    st.rerun()
+            
+            with col2:
+                if st.button("🔄 Regenerate", use_container_width=True, key="regen_ai"):
+                    st.session_state.ai_generated_action = None
+                    st.rerun()
+    
+    else:
+        st.info("👈 Click 'Load New Ticket' to start!")
+
+# ============================================================================
+# PAGE: AI BATCH TESTING (AI Powers All)
+# ============================================================================
+
+elif page == "AI Batch Testing":
+    st.title("⚡ AI Batch Testing")
+    st.markdown("AI processes multiple tickets automatically. Choose strategy and watch it work.")
+    
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        task = st.selectbox("Task", ["classify", "route", "resolve"], key="auto_task")
+        batch_task = st.selectbox("Task", ["classify", "route", "resolve"], key="batch_task")
     
     with col2:
-        num_episodes = st.number_input("Episodes", min_value=1, max_value=50, value=5, key="auto_episodes")
+        num_episodes = st.number_input("Episodes", min_value=1, max_value=100, value=10, key="batch_episodes")
     
     with col3:
-        llm_provider = st.selectbox(
-            "LLM Provider",
-            ["groq"],  # Only Groq available now
-            help="Currently supporting Groq free tier"
+        batch_mode = st.selectbox(
+            "AI Strategy",
+            ["standard", "thorough", "aggressive"],
+            help="How careful AI should be"
         )
     
     with col4:
         st.write("")
-        run_button = st.button("🚀 Run Auto-Test", type="primary", use_container_width=True)
+        run_batch = st.button("🚀 Run Batch", type="primary", use_container_width=True)
     
     st.divider()
     
-    if run_button:
+    if run_batch:
         progress_bar = st.progress(0)
         results_container = st.empty()
         
         batch_results = []
         
-        with st.spinner(f"Running {num_episodes} LLM-driven episodes..."):
+        with st.spinner(f"AI processing {num_episodes} tickets..."):
             for i in range(num_episodes):
-                episode_result = run_llm_episode(task, llm_provider, seed=random.randint(0, 9999))
-                batch_results.append(episode_result)
+                seed = random.randint(0, 9999)
                 
-                # Update statistics
-                if episode_result["status"] == "success":
-                    st.session_state.total_episodes += 1
-                    st.session_state.total_reward += episode_result["reward"]
-                    st.session_state.test_results.append(episode_result)
+                try:
+                    # Reset environment
+                    obs = st.session_state.env.reset(seed=seed, task=batch_task)
+                    
+                    # AI generates action
+                    action_dict = generate_llm_action(batch_task, obs, "groq")
+                    
+                    if action_dict:
+                        # Create action
+                        action = TicketAction(
+                            category=action_dict.get("category", ""),
+                            priority=action_dict.get("priority", ""),
+                            department=action_dict.get("department"),
+                            response=action_dict.get("response"),
+                            requires_escalation=action_dict.get("requires_escalation", False),
+                        )
+                        
+                        # Execute action
+                        result = st.session_state.env.step(action)
+                        
+                        batch_results.append({
+                            "status": "success",
+                            "reward": float(result.reward),
+                            "task": batch_task,
+                            "action": {
+                                "category": action.category,
+                                "priority": action.priority,
+                                "department": action.department,
+                            }
+                        })
+                        
+                        # Update stats
+                        st.session_state.total_episodes += 1
+                        st.session_state.total_reward += result.reward
+                        st.session_state.test_results.append(batch_results[-1])
+                    else:
+                        batch_results.append({"status": "failed", "reward": 0.0})
+                
+                except Exception as e:
+                    batch_results.append({"status": "failed", "reward": 0.0, "error": str(e)})
                 
                 # Update progress
                 progress_bar.progress((i + 1) / num_episodes)
@@ -275,135 +449,142 @@ if page == "Auto-Test":
                     successful = sum(1 for r in batch_results if r["status"] == "success")
                     st.info(f"Progress: {i + 1}/{num_episodes} | Success: {successful}/{i + 1}")
         
-        # Results
-        st.success("✅ Auto-Test Completed!")
+        st.success("✅ Batch Complete!")
         st.divider()
         
-        # Summary
-        st.subheader("📊 Results Summary")
-        successful_results = [r for r in batch_results if r["status"] == "success"]
+        # Results
+        successful = [r for r in batch_results if r["status"] == "success"]
         
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Total Episodes", len(batch_results))
+            st.metric("Episodes", len(batch_results))
         with col2:
-            st.metric("Successful", len(successful_results))
+            st.metric("Successful", len(successful))
         with col3:
-            if successful_results:
-                avg_score = sum(r["reward"] for r in successful_results) / len(successful_results)
-                st.metric("Avg Score", f"{avg_score:.1%}")
+            if successful:
+                avg = sum(r["reward"] for r in successful) / len(successful)
+                st.metric("Avg Score", f"{avg:.1%}")
         with col4:
-            if successful_results:
-                best_score = max(r["reward"] for r in successful_results)
-                st.metric("Best Score", f"{best_score:.1%}")
+            if successful:
+                best = max(r["reward"] for r in successful)
+                st.metric("Best", f"{best:.1%}")
         
         st.divider()
         
-        # Detailed results table
-        if successful_results:
-            st.subheader("📋 Detailed Results")
-            results_df = pd.DataFrame(successful_results)
-            results_df = results_df[["task", "reward", "llm_provider", "timestamp"]]
-            results_df.columns = ["Task", "Reward", "LLM", "Timestamp"]
-            results_df["Reward"] = results_df["Reward"].apply(lambda x: f"{x:.1%}")
-            st.dataframe(results_df, use_container_width=True, hide_index=True)
+        # Chart
+        if successful:
+            import matplotlib.pyplot as plt
+            
+            rewards = [r["reward"] for r in successful]
+            
+            fig, ax = plt.subplots(figsize=(12, 4))
+            ax.hist(rewards, bins=20, edgecolor='black', alpha=0.7, color='steelblue')
+            ax.axvline(sum(rewards) / len(rewards), color='r', linestyle='--', label='Mean')
+            ax.set_xlabel("Reward")
+            ax.set_ylabel("Frequency")
+            ax.set_title(f"AI Rewards Distribution ({batch_mode})")
+            ax.legend()
+            st.pyplot(fig)
             
             st.divider()
             
-            # Download results
+            # Download
             json_data = json.dumps(batch_results, indent=2, default=str)
             st.download_button(
-                label="📥 Download Results as JSON",
+                label="📥 Download Results",
                 data=json_data,
-                file_name=f"llm_test_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                file_name=f"ai_batch_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
                 mime="application/json"
             )
 
 # ============================================================================
-# PAGE: STATISTICS
+# PAGE: STATISTICS (Tracks All AI Results)
 # ============================================================================
 
 elif page == "Statistics":
-    st.title("📊 Statistics & Analytics")
-    st.markdown("Analysis of all LLM-generated test results")
+    st.title("📊 AI Performance Statistics")
+    st.markdown("Comprehensive analysis of all AI-generated decisions")
     
     if st.session_state.test_results:
         # Convert to DataFrame
         results_data = []
         for r in st.session_state.test_results:
-            if r["status"] == "success":
+            if r.get("status") == "success":
                 results_data.append({
                     "task": r["task"],
                     "reward": r["reward"],
-                    "llm": r["llm_provider"],
-                    "timestamp": r["timestamp"]
+                    "timestamp": r.get("timestamp", "")
                 })
         
-        df = pd.DataFrame(results_data)
-        
-        # Summary metrics
-        st.subheader("📈 Summary Metrics")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Total Episodes", len(df))
-        with col2:
-            st.metric("Average Reward", f"{df['reward'].mean():.1%}")
-        with col3:
-            st.metric("Best Score", f"{df['reward'].max():.1%}")
-        with col4:
-            st.metric("Worst Score", f"{df['reward'].min():.1%}")
-        
-        st.divider()
-        
-        # Performance by task
-        st.subheader("📋 Performance by Task")
-        task_stats = df.groupby('task')['reward'].agg(['count', 'mean', 'max', 'min'])
-        task_stats.columns = ['Episodes', 'Avg Reward', 'Best', 'Worst']
-        task_stats['Avg Reward'] = task_stats['Avg Reward'].apply(lambda x: f"{x:.1%}")
-        task_stats['Best'] = task_stats['Best'].apply(lambda x: f"{x:.1%}")
-        task_stats['Worst'] = task_stats['Worst'].apply(lambda x: f"{x:.1%}")
-        st.dataframe(task_stats, use_container_width=True)
-        
-        st.divider()
-        
-        # Reward trend chart
-        st.subheader("📉 Reward Trend")
-        import matplotlib.pyplot as plt
-        
-        fig, ax = plt.subplots(figsize=(12, 4))
-        ax.plot(df['reward'], marker='o', linestyle='-', linewidth=2, markersize=4, color='#1f77b4')
-        ax.axhline(y=df['reward'].mean(), color='r', linestyle='--', label=f"Average: {df['reward'].mean():.1%}")
-        ax.set_xlabel("Episode")
-        ax.set_ylabel("Reward")
-        ax.set_title("Reward per Episode - LLM Performance")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        st.pyplot(fig)
-        
-        st.divider()
-        
-        # Export
-        col1, col2 = st.columns(2)
-        with col1:
-            csv = df.to_csv(index=False)
-            st.download_button(
-                label="📥 Download as CSV",
-                data=csv,
-                file_name=f"llm_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
-        
-        with col2:
-            json_data = json.dumps(st.session_state.test_results, indent=2, default=str)
-            st.download_button(
-                label="📥 Download as JSON",
-                data=json_data,
-                file_name=f"llm_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                mime="application/json"
-            )
+        if results_data:
+            df = pd.DataFrame(results_data)
+            
+            # Summary metrics
+            st.subheader("📈 Summary Metrics")
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total Episodes", len(df))
+            with col2:
+                st.metric("Average Score", f"{df['reward'].mean():.1%}")
+            with col3:
+                st.metric("Best Score", f"{df['reward'].max():.1%}")
+            with col4:
+                st.metric("Worst Score", f"{df['reward'].min():.1%}")
+            
+            st.divider()
+            
+            # By task
+            st.subheader("📋 Performance by Task")
+            task_stats = df.groupby('task')['reward'].agg(['count', 'mean', 'max', 'min'])
+            task_stats.columns = ['Episodes', 'Avg Reward', 'Best', 'Worst']
+            task_stats['Avg Reward'] = task_stats['Avg Reward'].apply(lambda x: f"{x:.1%}")
+            task_stats['Best'] = task_stats['Best'].apply(lambda x: f"{x:.1%}")
+            task_stats['Worst'] = task_stats['Worst'].apply(lambda x: f"{x:.1%}")
+            st.dataframe(task_stats, use_container_width=True)
+            
+            st.divider()
+            
+            # Reward trend
+            st.subheader("📉 Reward Trend")
+            import matplotlib.pyplot as plt
+            
+            fig, ax = plt.subplots(figsize=(12, 4))
+            ax.plot(df['reward'], marker='o', linestyle='-', linewidth=2, markersize=4, color='#1f77b4')
+            ax.axhline(y=df['reward'].mean(), color='r', linestyle='--', label=f"Average: {df['reward'].mean():.1%}")
+            ax.fill_between(range(len(df)), df['reward'], alpha=0.2)
+            ax.set_xlabel("Episode")
+            ax.set_ylabel("Reward")
+            ax.set_title("AI Performance Over Time")
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            st.pyplot(fig)
+            
+            st.divider()
+            
+            # Download
+            col1, col2 = st.columns(2)
+            with col1:
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download as CSV",
+                    data=csv,
+                    file_name=f"ai_stats_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+            
+            with col2:
+                json_data = json.dumps(st.session_state.test_results, indent=2, default=str)
+                st.download_button(
+                    label="📥 Download as JSON",
+                    data=json_data,
+                    file_name=f"ai_stats_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json"
+                )
+        else:
+            st.info("No successful results yet.")
     else:
-        st.info("No test results yet. Run Auto-Test to generate data.")
+        st.info("No test results yet. Run AI Interactive Demo or AI Batch Testing first.")
 
 # ============================================================================
 # PAGE: TESTING & VERIFICATION
@@ -640,20 +821,20 @@ elif page == "Settings":
     
     with col2:
         st.write("**UI Framework:** Streamlit")
-        st.write("**LLM Provider:** Groq (free tier)")
+        st.write("**AI Provider:** Groq (free tier)")
     
     st.divider()
     
     st.subheader("📚 Task Definitions")
     
-    with st.expander("🎯 Classify (Easy)"):
-        st.write("Classify ticket category and priority only.")
+    with st.expander("🎯 Classify (Easy)", expanded=False):
+        st.write("AI classifies ticket category and assigns priority level.")
     
-    with st.expander("🛣️ Route (Medium)"):
-        st.write("Classify, prioritize, AND route to department.")
+    with st.expander("🛣️ Route (Medium)", expanded=False):
+        st.write("AI classifies, prioritizes, AND routes to appropriate department.")
     
-    with st.expander("✉️ Resolve (Hard)"):
-        st.write("Classify, prioritize, route, AND provide response text.")
+    with st.expander("✉️ Resolve (Hard)", expanded=False):
+        st.write("AI classifies, prioritizes, routes, AND generates response text.")
     
     st.divider()
     
@@ -670,6 +851,8 @@ elif page == "Settings":
         st.session_state.test_results = []
         st.session_state.total_episodes = 0
         st.session_state.total_reward = 0.0
+        st.session_state.current_observation = None
+        st.session_state.ai_generated_action = None
         st.success("All results cleared!")
         st.rerun()
 
@@ -680,7 +863,7 @@ elif page == "Settings":
 st.divider()
 st.markdown("""
     <div style="text-align: center; margin-top: 20px; padding: 10px; color: #666;">
-        <p>🤖 100% LLM API-Driven Testing | Powered by Streamlit</p>
-        <p style="font-size: 0.8em;">Groq LLM handles all decisions - no manual input required.</p>
+        <p>🤖 100% AI-Powered Testing | Powered by Streamlit</p>
+        <p style="font-size: 0.8em;">AI handles all decisions - no manual input required.</p>
     </div>
 """, unsafe_allow_html=True)
