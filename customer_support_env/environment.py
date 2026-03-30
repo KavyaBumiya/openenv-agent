@@ -2,6 +2,7 @@
 
 import logging
 import random
+import re
 import uuid
 from typing import Dict, Any
 
@@ -142,6 +143,14 @@ ESCALATION CRITERIA (requires_escalation=true):
         
         Only instance variables that survive between reset() and step()
         """
+        # Validate reward weights sum to 1.0 for each task
+        for task, weights in self.REWARD_WEIGHTS.items():
+            total_weight = sum(weights.values())
+            assert abs(total_weight - 1.0) < 1e-9, (
+                f"REWARD_WEIGHTS['{task}'] sum to {total_weight}, not 1.0. "
+                f"Weights: {weights}"
+            )
+        
         self._state: TicketState = TicketState()
         self._ticket: Dict[str, Any] | None = None
         self._task: str = "classify"
@@ -476,7 +485,11 @@ ESCALATION CRITERIA (requires_escalation=true):
             for suffix in ("ed", "ing", "s", "tion"):
                 if kw.lower().endswith(suffix) and len(kw) > len(suffix) + 2:
                     variants.add(kw.lower()[: -len(suffix)])
-            return any(v and v in text for v in variants)
+            # Use word boundaries to avoid substring matching (e.g., "solve" ≠ "resolve")
+            for v in variants:
+                if v and re.search(rf'\b{re.escape(v)}\b', text):
+                    return True
+            return False
 
         found_count = sum(1 for kw in required_keywords if _kw_match(kw, response_lower))
         

@@ -429,36 +429,6 @@ async def state(session_id: str = Query(..., description="Session ID from /reset
         logger.error(f"Error getting state for session {session_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/")
-async def root():
-    """Health check and API info."""
-    return {
-        "name": "Customer Support RL Environment",
-        "version": "0.1.0",
-        "endpoints": {
-            "/docs": "Interactive API documentation (Swagger UI)",
-            "/tasks": "GET - Task definitions for evaluation",
-            "/grader": "GET - Scoring philosophy and reward breakdown",
-            "/baseline": "POST - Run baseline evaluation with Groq",
-            "/ws": "WebSocket - Real-time agent interaction",
-            "/reset": "POST - Reset environment for new episode",
-            "/step": "POST - Submit action and get reward",
-            "/state": "GET - Get current environment state",
-        },
-    }
-
-
-@app.get("/health")
-async def health():
-    """Health check endpoint. Returns 200 when the server is ready."""
-    return {
-        "status": "ok",
-        "environment": "CustomerSupportEnvironment",
-        "version": "0.1.0",
-        "tasks": ["classify", "route", "resolve"],
-        "groq_configured": bool(os.getenv("GROQ_API_KEY")),
-    }
-
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

@@ -131,8 +131,7 @@ def process_action(action: TicketAction):
         "subject": st.session_state.current_observation.subject if st.session_state.current_observation else None,
         "reward": result.reward,
         "timestamp": datetime.now().isoformat(),
-        "feedback": result.feedback if hasattr(result, 'feedback') else "",
-        "score_breakdown": result.score_breakdown if hasattr(result, 'score_breakdown') else {}
+        "feedback": result.feedback if hasattr(result, 'feedback') else ""
     }
     st.session_state.episode_history.append(history_entry)
     
@@ -351,12 +350,6 @@ if page == "Interactive Demo":
             # Feedback
             if hasattr(result, 'feedback') and result.feedback:
                 st.info(f"💭 **Feedback:**\n\n{result.feedback}")
-            
-            # Score breakdown
-            if hasattr(result, 'score_breakdown') and result.score_breakdown:
-                with st.expander("📈 Score Breakdown"):
-                    for component, score in result.score_breakdown.items():
-                        st.write(f"**{component.replace('_', ' ').title()}:** {score:.1%}")
     else:
         st.info("👈 Click 'Load New Ticket' to get started!")
 
