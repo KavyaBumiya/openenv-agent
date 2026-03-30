@@ -576,8 +576,8 @@ TICKETS = [
 try:
     validate_tickets()
 except ValueError as e:
-    # Validation failed - exit immediately
-    sys.exit(1)
+    # Validation failed - raise exception to let server handle it properly
+    raise RuntimeError(f"TICKET DATA VALIDATION FAILED: {e}") from e
 
 # Verification checks (run locally to validate)
 if __name__ == "__main__":

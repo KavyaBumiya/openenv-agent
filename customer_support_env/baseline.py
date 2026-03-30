@@ -291,7 +291,7 @@ def run_baseline(mode="official"):
         task_name: task_data["mean"]
         for task_name, task_data in results["tasks"].items()
     }
-    simple_output["_details"] = results  # Include detailed stats
+    # Note: We only output simple results here to ensure regex JSON extraction works reliably
     
     print("\n" + json.dumps(simple_output, indent=2))
     
