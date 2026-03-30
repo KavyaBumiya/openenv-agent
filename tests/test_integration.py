@@ -11,6 +11,7 @@ Run before deployment: python tests/test_integration.py
 import sys
 import os
 from typing import Any
+from pydantic import ValidationError
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
@@ -144,7 +145,7 @@ def test_invalid_inputs_rejected():
         }
         TicketAction.model_validate(invalid_category_payload)
         assert False, "Should have rejected invalid category"
-    except Exception:
+    except ValidationError:
         pass  # Expected
     
     try:
@@ -158,7 +159,7 @@ def test_invalid_inputs_rejected():
         }
         TicketAction.model_validate(invalid_priority_payload)
         assert False, "Should have rejected invalid priority"
-    except Exception:
+    except ValidationError:
         pass  # Expected
     
     print(f"  invalid inputs properly rejected")

@@ -10,7 +10,7 @@ python main.py
 ```
 
 ### Run Baseline Evaluation
-Evaluates the environment with Groq AI (10 episodes per task = 30 total)
+Evaluates the environment with Groq AI (30 episodes per task = 90 total)
 ```bash
 python main.py baseline
 ```
@@ -100,7 +100,7 @@ python main.py demo
 |---------|---------|------|----------|
 | `main.py` | Show menu | 1s | No |
 | `main.py test` | Quick verify | 5s | No |
-| `main.py baseline` | Full evaluation | 2-3min | **Yes** |
+| `main.py baseline` | Full evaluation | ~30min | **Yes** |
 | `main.py server` | Start API | ∞ | **Yes** |
 | `main.py demo` | Interactive | ∞ | No |
 

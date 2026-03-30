@@ -27,6 +27,7 @@ client = Groq(api_key=api_key)
 
 from customer_support_env.environment import CustomerSupportEnvironment
 from customer_support_env.models import TicketAction
+from customer_support_env.baseline import extract_json
 
 print("=" * 80)
 print("IMPROVED GROQ TRAINING: Few-Shot + Deep Analysis")
@@ -119,14 +120,7 @@ Instructions:
         if content is None:
             raise ValueError("Empty response")
         
-        # Extract JSON (might have extra text)
-        try:
-            json_start = content.find('{')
-            json_end = content.rfind('}') + 1
-            json_str = content[json_start:json_end]
-            easy_result = json.loads(json_str)
-        except:
-            easy_result = json.loads(content)
+        easy_result = extract_json(content)
         
         action = TicketAction(
             category=easy_result['category'],
@@ -179,13 +173,7 @@ Instructions:
         if content is None:
             raise ValueError("Empty response")
         
-        try:
-            json_start = content.find('{')
-            json_end = content.rfind('}') + 1
-            json_str = content[json_start:json_end]
-            medium_result = json.loads(json_str)
-        except:
-            medium_result = json.loads(content)
+        medium_result = extract_json(content)
         
         action = TicketAction(
             category=medium_result['category'],
@@ -236,13 +224,7 @@ Instructions:
         if content is None:
             raise ValueError("Empty response")
         
-        try:
-            json_start = content.find('{')
-            json_end = content.rfind('}') + 1
-            json_str = content[json_start:json_end]
-            hard_result = json.loads(json_str)
-        except:
-            hard_result = json.loads(content)
+        hard_result = extract_json(content)
         
         action = TicketAction(
             category=hard_result['category'],
