@@ -63,25 +63,12 @@ jobs:
           python main.py baseline --mode training 2>&1 | tee benchmark_output.log
         continue-on-error: true
 
-      - name: Generate benchmark report
-        if: env.GROQ_API_KEY != ''
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        run: |
-          python generate_benchmark_report.py \
-            --output reports \
-            --mode official \
-            --github-actions
-        continue-on-error: true
-
       - name: Upload artifact
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: benchmark-reports
-          path: |
-            reports/
-            benchmark_output.log
+          path: benchmark_output.log
           retention-days: 30
 
       - name: Comment PR with results
