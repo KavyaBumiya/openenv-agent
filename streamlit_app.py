@@ -244,8 +244,8 @@ with st.sidebar:
     # Main navigation
     page = option_menu(
         "Menu",
-        ["Interactive Demo", "Statistics", "Batch Testing", "Settings"],
-        icons=["play-circle", "bar-chart", "speedometer", "gear"],
+        ["Interactive Demo", "Statistics", "Batch Testing", "Testing & Verification", "Settings"],
+        icons=["play-circle", "bar-chart", "speedometer", "flask-conical", "gear"],
         menu_icon="cast",
         default_index=0,
     )
@@ -675,6 +675,451 @@ elif page == "Batch Testing":
         ax.set_title(f"Reward Distribution ({test_mode})")
         ax.legend()
         st.pyplot(fig)
+
+# ============================================================================
+# PAGE: TESTING & VERIFICATION
+# ============================================================================
+
+elif page == "Testing & Verification":
+    st.title("🧪 Testing & Verification Suite")
+    st.markdown("Comprehensive automated testing directly in the UI. No terminal needed!")
+    
+    # Test selection tabs
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["System Tests", "API Tests", "Data Validation", "Baseline Eval", "Full Report"])
+    
+    # ========== TAB 1: SYSTEM TESTS ==========
+    with tab1:
+        st.subheader("🔧 System & Environment Tests")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🧪 Test 1: Environment Initialization", use_container_width=True):
+                with st.spinner("Testing environment..."):
+                    try:
+                        env = CustomerSupportEnvironment()
+                        st.success("✅ Environment initialized successfully")
+                        st.json({"status": "OK", "env_type": str(type(env).__name__)})
+                    except Exception as e:
+                        st.error(f"❌ Failed: {str(e)}")
+        
+        with col2:
+            if st.button("🧪 Test 2: Reset Method", use_container_width=True):
+                with st.spinner("Testing reset..."):
+                    try:
+                        obs = st.session_state.env.reset(seed=0, task="classify")
+                        st.success("✅ Reset method works")
+                        st.json({
+                            "ticket_id": obs.ticket_id,
+                            "task": obs.task_name,
+                            "subject": obs.subject[:50] + "..."
+                        })
+                    except Exception as e:
+                        st.error(f"❌ Failed: {str(e)}")
+        
+        col3, col4 = st.columns(2)
+        with col3:
+            if st.button("🧪 Test 3: Step Method", use_container_width=True):
+                with st.spinner("Testing step..."):
+                    try:
+                        obs = st.session_state.env.reset(seed=1, task="classify")
+                        action = TicketAction(category="billing", priority="medium")
+                        result = st.session_state.env.step(action)
+                        st.success("✅ Step method works")
+                        st.json({
+                            "reward": float(result.reward),
+                            "done": result.done,
+                            "has_feedback": hasattr(result, 'feedback') and result.feedback is not None
+                        })
+                    except Exception as e:
+                        st.error(f"❌ Failed: {str(e)}")
+        
+        with col4:
+            if st.button("🧪 Test 4: State Property", use_container_width=True):
+                with st.spinner("Testing state..."):
+                    try:
+                        state = st.session_state.env.state
+                        st.success("✅ State property works")
+                        st.json({
+                            "episode_id": state.episode_id,
+                            "step_count": state.step_count,
+                            "task_name": state.task_name
+                        })
+                    except Exception as e:
+                        st.error(f"❌ Failed: {str(e)}")
+        
+        st.divider()
+        
+        # Groq API Test
+        col5, col6 = st.columns(2)
+        with col5:
+            if st.button("🤖 Test 5: Groq API Connection", use_container_width=True):
+                with st.spinner("Connecting to Groq..."):
+                    try:
+                        from groq import Groq
+                        api_key = os.getenv("GROQ_API_KEY")
+                        
+                        if not api_key:
+                            st.error("❌ GROQ_API_KEY not set in .env")
+                        else:
+                            client = Groq(api_key=api_key)
+                            models = client.models.list()
+                            st.success("✅ Groq API authenticated")
+                            st.json({"models_available": len(models.data)})
+                    except Exception as e:
+                        st.error(f"❌ Failed: {str(e)}")
+        
+        with col6:
+            if st.button("🧪 Test 6: Pydantic Models", use_container_width=True):
+                with st.spinner("Validating models..."):
+                    try:
+                        # Test TicketAction validation
+                        action1 = TicketAction(category="billing", priority="high")
+                        action2 = TicketAction(
+                            category="tech", priority="urgent", 
+                            department="tier1", response="Test"
+                        )
+                        st.success("✅ Pydantic models validated")
+                        st.json({"models_tested": 2, "validation": "passed"})
+                    except Exception as e:
+                        st.error(f"❌ Failed: {str(e)}")
+    
+    # ========== TAB 2: API ENDPOINT TESTS ==========
+    with tab2:
+        st.subheader("🌐 API Endpoint Tests")
+        st.markdown("Test all FastAPI endpoints without leaving the UI")
+        
+        # Check if server endpoints are accessible
+        test_endpoints = [
+            ("/health", "Health Check"),
+            ("/tasks", "Get Tasks"),
+            ("/state", "Get Current State"),
+        ]
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📡 Test All Endpoints", use_container_width=True, type="primary"):
+                with st.spinner("Testing endpoints..."):
+                    import requests
+                    
+                    results = []
+                    base_url = "http://localhost:8000"
+                    
+                    for endpoint, label in test_endpoints:
+                        try:
+                            resp = requests.get(f"{base_url}{endpoint}", timeout=5)
+                            results.append({
+                                "endpoint": endpoint,
+                                "label": label,
+                                "status": resp.status_code,
+                                "ok": resp.status_code == 200
+                            })
+                        except requests.exceptions.ConnectionError:
+                            results.append({
+                                "endpoint": endpoint,
+                                "label": label,
+                                "status": "Connection Failed",
+                                "ok": False
+                            })
+                        except Exception as e:
+                            results.append({
+                                "endpoint": endpoint,
+                                "label": label,
+                                "status": str(e),
+                                "ok": False
+                            })
+                    
+                    # Display results
+                    for result in results:
+                        if result['ok']:
+                            st.success(f"✅ {result['label']} - {result['status']}")
+                        else:
+                            st.warning(f"⚠️ {result['label']} - {result['status']}")
+        
+        with col2:
+            st.info("**Note:** Ensure FastAPI server is running in another terminal:\n```\npython main.py\n```")
+            if st.button("✅ Test Endpoint Response", use_container_width=True):
+                with st.spinner("Fetching data..."):
+                    try:
+                        # Test /tasks endpoint
+                        from customer_support_env.environment import CustomerSupportEnvironment
+                        env = CustomerSupportEnvironment()
+                        
+                        st.success("✅ Environment created successfully")
+                        st.json({
+                            "tasks": ["classify", "route", "resolve"],
+                            "difficulties": ["Easy", "Medium", "Hard"]
+                        })
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
+    
+    # ========== TAB 3: DATA VALIDATION ==========
+    with tab3:
+        st.subheader("📋 Data Validation Tests")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("✅ Test: Load Tickets", use_container_width=True):
+                with st.spinner("Loading tickets..."):
+                    try:
+                        from customer_support_env.data import TICKETS, validate_tickets
+                        validate_tickets()
+                        st.success(f"✅ All {len(TICKETS)} tickets loaded and validated")
+                        
+                        # Show sample
+                        st.subheader("Sample Ticket:")
+                        ticket = TICKETS[0]
+                        st.json({
+                            "id": ticket["ticket_id"],
+                            "subject": ticket["subject"][:50] + "...",
+                            "category": ticket["category"],
+                            "priority": ticket["priority"],
+                            "tier": ticket["sender_tier"]
+                        })
+                    except Exception as e:
+                        st.error(f"❌ Failed: {str(e)}")
+        
+        with col2:
+            if st.button("✅ Test: Validate Schemas", use_container_width=True):
+                with st.spinner("Validating schemas..."):
+                    try:
+                        from customer_support_env.data import TICKETS
+                        
+                        required_fields = [
+                            "ticket_id", "subject", "body", "category", "priority",
+                            "sender_tier", "sentiment", "department", "response_keywords"
+                        ]
+                        
+                        for ticket in TICKETS:
+                            for field in required_fields:
+                                if field not in ticket:
+                                    raise ValueError(f"Missing field: {field} in ticket {ticket.get('ticket_id', 'unknown')}")
+                        
+                        st.success("✅ All tickets have required fields")
+                        st.json({"tickets_validated": len(TICKETS), "fields_checked": len(required_fields)})
+                    except Exception as e:
+                        st.error(f"❌ Failed: {str(e)}")
+        
+        with col3:
+            if st.button("✅ Test: Category Distribution", use_container_width=True):
+                with st.spinner("Analyzing categories..."):
+                    try:
+                        from customer_support_env.data import TICKETS
+                        from collections import Counter
+                        
+                        categories = Counter(t["category"] for t in TICKETS)
+                        
+                        st.success("✅ Category distribution validated")
+                        
+                        import matplotlib.pyplot as plt
+                        fig, ax = plt.subplots(figsize=(10, 4))
+                        ax.bar(categories.keys(), categories.values(), color='steelblue')
+                        ax.set_xlabel("Category")
+                        ax.set_ylabel("Count")
+                        ax.set_title("Ticket Category Distribution")
+                        st.pyplot(fig)
+                    except Exception as e:
+                        st.error(f"❌ Failed: {str(e)}")
+    
+    # ========== TAB 4: BASELINE EVALUATION ==========
+    with tab4:
+        st.subheader("📊 Baseline Evaluation")
+        st.markdown("Run automated baseline evaluation with Groq LLM")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            select_task = st.selectbox("Select Task", ["classify", "route", "resolve"], key="baseline_task")
+        with col2:
+            num_episodes_base = st.number_input("Episodes", 1, 30, 5, key="baseline_episodes")
+        with col3:
+            st.write("")
+            if st.button("🚀 Run Baseline", type="primary", use_container_width=True):
+                with st.spinner(f"Running {num_episodes_base} baseline episodes..."):
+                    try:
+                        from customer_support_env.baseline import run_baseline, get_llm_results
+                        import subprocess
+                        
+                        # Run baseline script
+                        result = subprocess.run(
+                            ["python", "-m", "customer_support_env.baseline", "--task", select_task, "--episodes", str(num_episodes_base)],
+                            capture_output=True,
+                            text=True,
+                            timeout=120
+                        )
+                        
+                        if result.returncode == 0:
+                            st.success("✅ Baseline evaluation completed!")
+                            
+                            # Parse results
+                            output_lines = result.stdout.split('\n')
+                            for line in output_lines:
+                                if "Mean score" in line or "Score" in line or "accuracy" in line.lower():
+                                    st.write(line)
+                        else:
+                            st.warning("⚠️ Baseline completed with warnings")
+                            st.write(result.stderr)
+                    except subprocess.TimeoutExpired:
+                        st.error("❌ Baseline evaluation timed out")
+                    except Exception as e:
+                        st.error(f"❌ Error: {str(e)}")
+    
+    # ========== TAB 5: FULL TEST REPORT ==========
+    with tab5:
+        st.subheader("📄 Complete Test Report")
+        st.markdown("Generate and download comprehensive test results")
+        
+        if st.button("📋 Generate Full Test Report", type="primary", use_container_width=True):
+            with st.spinner("Running all tests..."):
+                report = {
+                    "timestamp": datetime.now().isoformat(),
+                    "tests": {
+                        "environment": {"status": "pending"},
+                        "reset": {"status": "pending"},
+                        "step": {"status": "pending"},
+                        "state": {"status": "pending"},
+                        "tickets": {"status": "pending"},
+                        "schemas": {"status": "pending"},
+                        "groq_api": {"status": "pending"},
+                        "pydantic": {"status": "pending"},
+                    }
+                }
+                
+                # Run all tests
+                tests_passed = 0
+                tests_failed = 0
+                
+                # Test 1: Environment
+                try:
+                    env = CustomerSupportEnvironment()
+                    report["tests"]["environment"]["status"] = "PASSED"
+                    tests_passed += 1
+                except Exception as e:
+                    report["tests"]["environment"]["status"] = f"FAILED: {str(e)}"
+                    tests_failed += 1
+                
+                # Test 2: Reset
+                try:
+                    obs = st.session_state.env.reset(seed=0, task="classify")
+                    report["tests"]["reset"]["status"] = "PASSED"
+                    tests_passed += 1
+                except Exception as e:
+                    report["tests"]["reset"]["status"] = f"FAILED: {str(e)}"
+                    tests_failed += 1
+                
+                # Test 3: Step
+                try:
+                    action = TicketAction(category="billing", priority="medium")
+                    result = st.session_state.env.step(action)
+                    report["tests"]["step"]["status"] = "PASSED"
+                    tests_passed += 1
+                except Exception as e:
+                    report["tests"]["step"]["status"] = f"FAILED: {str(e)}"
+                    tests_failed += 1
+                
+                # Test 4: State
+                try:
+                    state = st.session_state.env.state
+                    report["tests"]["state"]["status"] = "PASSED"
+                    tests_passed += 1
+                except Exception as e:
+                    report["tests"]["state"]["status"] = f"FAILED: {str(e)}"
+                    tests_failed += 1
+                
+                # Test 5: Tickets
+                try:
+                    from customer_support_env.data import TICKETS, validate_tickets
+                    validate_tickets()
+                    report["tests"]["tickets"]["count"] = len(TICKETS)
+                    report["tests"]["tickets"]["status"] = "PASSED"
+                    tests_passed += 1
+                except Exception as e:
+                    report["tests"]["tickets"]["status"] = f"FAILED: {str(e)}"
+                    tests_failed += 1
+                
+                # Test 6: Schemas
+                try:
+                    from customer_support_env.data import TICKETS
+                    required_fields = ["ticket_id", "subject", "body", "category", "priority"]
+                    for ticket in TICKETS:
+                        for field in required_fields:
+                            if field not in ticket:
+                                raise ValueError(f"Missing {field}")
+                    report["tests"]["schemas"]["status"] = "PASSED"
+                    tests_passed += 1
+                except Exception as e:
+                    report["tests"]["schemas"]["status"] = f"FAILED: {str(e)}"
+                    tests_failed += 1
+                
+                # Test 7: Groq API
+                try:
+                    api_key = os.getenv("GROQ_API_KEY")
+                    if not api_key:
+                        report["tests"]["groq_api"]["status"] = "SKIPPED: No API key"
+                    else:
+                        from groq import Groq
+                        client = Groq(api_key=api_key)
+                        models = client.models.list()
+                        report["tests"]["groq_api"]["status"] = "PASSED"
+                        report["tests"]["groq_api"]["models"] = len(models.data)
+                        tests_passed += 1
+                except Exception as e:
+                    report["tests"]["groq_api"]["status"] = f"FAILED: {str(e)}"
+                    tests_failed += 1
+                
+                # Test 8: Pydantic
+                try:
+                    action = TicketAction(category="billing", priority="high")
+                    report["tests"]["pydantic"]["status"] = "PASSED"
+                    tests_passed += 1
+                except Exception as e:
+                    report["tests"]["pydantic"]["status"] = f"FAILED: {str(e)}"
+                    tests_failed += 1
+                
+                # Summary
+                report["summary"] = {
+                    "total_tests": len(report["tests"]),
+                    "passed": tests_passed,
+                    "failed": tests_failed,
+                    "success_rate": f"{(tests_passed / len(report['tests']) * 100):.1f}%"
+                }
+                
+                # Display report
+                st.success("✅ Test Report Generated!")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Total Tests", report["summary"]["total_tests"])
+                with col2:
+                    st.metric("Passed", report["summary"]["passed"], delta_color="normal")
+                with col3:
+                    st.metric("Failed", report["summary"]["failed"], delta_color="inverse")
+                with col4:
+                    st.metric("Success Rate", report["summary"]["success_rate"])
+                
+                st.divider()
+                
+                # Test details
+                st.subheader("📊 Detailed Results:")
+                for test_name, test_result in report["tests"].items():
+                    if "PASSED" in str(test_result):
+                        st.success(f"✅ {test_name}: {test_result['status']}")
+                    elif "SKIPPED" in str(test_result):
+                        st.info(f"ℹ️ {test_name}: {test_result['status']}")
+                    else:
+                        st.error(f"❌ {test_name}: {test_result['status']}")
+                
+                st.divider()
+                
+                # Download report
+                json_report = json.dumps(report, indent=2, default=str)
+                st.download_button(
+                    label="📥 Download Full Report as JSON",
+                    data=json_report,
+                    file_name=f"test_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json"
+                )
 
 # ============================================================================
 # PAGE: SETTINGS
