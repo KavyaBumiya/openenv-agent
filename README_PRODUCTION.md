@@ -81,9 +81,9 @@ This environment simulates real-world customer support ticket triage—the task 
 **Score Components**:
 - Category: 20%
 - Priority: 15%
-- Department: 15%
-- Escalation: 10%
-- **Response quality: 40%** ⭐
+- Department: 20%
+- Escalation: 15%
+- **Response quality: 30%** ⭐
 
 **Response Grading**:
 - Keyword matching (75% of required keywords must appear)
@@ -323,7 +323,7 @@ Note: High temperature values (0.5-0.7) increase variance and are useful for exp
 
 - **Classify is easy**: Clear categories in subject/body
 - **Route is medium**: Requires domain knowledge of departments
-- **Resolve is hardest**: Demands empathy + completeness (40% of score)
+- **Resolve is hardest**: Demands empathy + completeness (30% of score)
 - **Variance is meaningful**: Not all scores clustered at 0.5 (the environment actually grades)
 
 ---

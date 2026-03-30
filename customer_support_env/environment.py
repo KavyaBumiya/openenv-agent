@@ -604,8 +604,17 @@ ESCALATION CRITERIA (requires_escalation=true):
                 feedback_parts.append(f"✗ Response required for HARD task (PENALTY: -50% for incomplete resolve)")
             else:
                 response_lower = response_text.lower()
-                found = [kw for kw in gt_keywords if kw.lower() in response_lower]
-                missing = [kw for kw in gt_keywords if kw.lower() not in response_lower]
+                # Use same word-boundary matching as _score_response for consistency
+                found = []
+                for kw in gt_keywords:
+                    variants = {kw.lower()}
+                    for suffix in ("ed", "ing", "s", "tion"):
+                        if kw.lower().endswith(suffix) and len(kw) > len(suffix) + 2:
+                            variants.add(kw.lower()[: -len(suffix)])
+                    if any(v and re.search(rf'\b{re.escape(v)}\b', response_lower) for v in variants):
+                        found.append(kw)
+                
+                missing = [kw for kw in gt_keywords if kw not in found]
                 feedback_parts.append(
                     f"Response: {len(found)}/{len(gt_keywords)} keywords found. Missing: {missing if missing else 'none'}"
                 )
