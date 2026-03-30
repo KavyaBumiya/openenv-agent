@@ -230,7 +230,14 @@ def auto_generate_action(task: str, obs) -> Optional[TicketAction]:
             return action
         
         except Exception as e:
-            st.error(f"❌ Error generating action: {str(e)}")
+            error_msg = str(e)
+            # Check for rate limit error
+            if "rate_limit" in error_msg.lower() or "429" in error_msg:
+                st.error(f"⏸️ **Rate Limited**: Groq free tier limit reached. Please wait or upgrade at https://console.groq.com/settings/billing")
+            elif "invalid_request_error" in error_msg or "validation error" in error_msg:
+                st.error(f"❌ Invalid request: {error_msg[:100]}")
+            else:
+                st.error(f"❌ Error generating action: {error_msg[:150]}")
             return None
 
 # ============================================================================
@@ -422,6 +429,19 @@ if page == "Interactive Demo":
             if st.button("🗑️ Clear Auto", use_container_width=True, disabled=st.session_state.auto_action is None):
                 st.session_state.auto_action = None
                 st.rerun()
+        
+        st.divider()
+        
+        # Rate limit notice for Auto Agent
+        with st.expander("ℹ️ About Auto Agent", expanded=False):
+            st.info("""
+            **Auto Agent** uses Groq's free tier (100k tokens/day limit).
+            - Each action uses ~500-1000 tokens
+            - If rate limited, you can:
+              1. Wait ~4 hours for usage to refresh
+              2. Upgrade at https://console.groq.com/settings/billing
+              3. Use Manual mode instead
+            """)
         
         st.divider()
         
@@ -775,7 +795,7 @@ elif page == "Testing & Verification":
                         # Test TicketAction validation
                         action1 = TicketAction(category="billing", priority="high")
                         action2 = TicketAction(
-                            category="tech", priority="urgent", 
+                            category="technical", priority="urgent", 
                             department="tier1", response="Test"
                         )
                         st.success("✅ Pydantic models validated")
@@ -926,6 +946,14 @@ elif page == "Testing & Verification":
     with tab4:
         st.subheader("📊 Baseline Evaluation")
         st.markdown("Run automated baseline evaluation with Groq LLM")
+        
+        # Rate limit warning
+        st.warning("""
+        ⚠️ **Rate Limit Notice**: Groq free tier allows 100k tokens/day. 
+        - If you hit the limit, you can upgrade at https://console.groq.com/settings/billing
+        - Or wait ~24 hours for the limit to reset
+        - Each baseline episode uses approximately 2-4k tokens
+        """)
         
         col1, col2, col3 = st.columns(3)
         
