@@ -21,6 +21,25 @@ logger = logging.getLogger(__name__)
 app = create_fastapi_app(CustomerSupportEnvironment)
 
 
+# ============= HEALTH & ROOT ENDPOINTS =============
+
+@app.get("/")
+async def root():
+    """Root endpoint - proof the server is running."""
+    return {
+        "status": "running",
+        "service": "Customer Support RL Environment",
+        "docs": "/docs",
+        "health": "/health"
+    }
+
+
+@app.get("/health")
+async def health():
+    """Health check endpoint (required by HuggingFace Spaces)."""
+    return {"status": "healthy", "service": "customer-support-env"}
+
+
 # ============= REQUEST/RESPONSE MODELS =============
 
 class ResetRequest(BaseModel):
