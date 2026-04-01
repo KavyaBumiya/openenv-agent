@@ -16,11 +16,14 @@ tags:
 
 # Customer Support RL Environment
 
-An [OpenEnv](https://github.com/openenv)-compliant single-turn RL environment
+An [OpenEnv](https://github.com/openenv)-compliant RL environment
 for training and evaluating LLM agents on **real-world customer-support ticket triage**.
 
 Agents learn to classify tickets, route them to the right department, and draft
 professional customer responses — tasks that mirror actual enterprise support workflows.
+
+This environment is designed for real operational workflows in SaaS support teams:
+ticket triage quality, escalation judgment, and response quality under SLA pressure.
 
 ---
 
@@ -28,7 +31,7 @@ professional customer responses — tasks that mirror actual enterprise support 
 
 | Property | Value |
 |----------|-------|
-| Episode type | Single-turn (1 reset → 1 step → done) |
+| Episode type | Multi-turn (1-3 steps depending on task) |
 | Dataset | 30 curated tickets across 5 categories |
 | Tasks | 3 (classify → route → resolve) |
 | Reward range | [0.0, 1.0] |
@@ -85,6 +88,9 @@ Grader weights: `category=0.2, priority=0.15, department=0.2, escalation=0.15, r
 - **Enterprise penalty**: priority errors cost more for enterprise customers  
 - **SLA penalty**: tickets open >24 h are scored more strictly on routing  
 - **Response quality**: keyword coverage + empathy bonus for frustrated customers  
+- **Trajectory progress**: reward is based on improvement over the best prior score  
+- **Loop penalty**: repeated actions are penalized to discourage infinite loops  
+- **Extra-step penalty**: each additional step costs reward, encouraging efficient completion
 
 ---
 
@@ -147,7 +153,9 @@ docker run \
 | `API_BASE_URL` | `https://router.huggingface.co/v1` | OpenAI-compatible LLM endpoint |
 | `MODEL_NAME` | `meta-llama/Llama-3.1-8B-Instruct` | Model identifier |
 | `HF_TOKEN` | *(required)* | HuggingFace or provider API token |
+| `OPENAI_API_KEY` | *(optional)* | Alternative key name recognized by `inference.py` |
 | `ENV_BASE_URL` | `http://localhost:7860` | Deployed environment URL used by `inference.py` |
+| `LOCAL_IMAGE_NAME` | *(optional)* | Local image name for docker-image workflows |
 
 ---
 
@@ -184,7 +192,7 @@ docker run \
 
 ## Baseline Scores
 
-Measured with `meta-llama/Llama-3.1-8B-Instruct` via HuggingFace router, `temperature=0.3`, 3 seeds per task:
+Measured with `meta-llama/Llama-3.1-8B-Instruct` via HuggingFace router, `temperature=0.0`, 3 seeds per task:
 
 | Task | Difficulty | Expected Score |
 |------|-----------|----------------|
@@ -206,15 +214,40 @@ cp .env.example .env
 python inference.py
 ```
 
-Expected stdout format:
+The baseline script emits strict structured stdout lines required by evaluators:
 ```
 [START] task=classify env=customer_support_env model=meta-llama/Llama-3.1-8B-Instruct
 [STEP] step=1 action=category=billing priority=high reward=1.00 done=true error=null
-[END] success=true steps=1 score=1.000 rewards=1.00
+[END] success=true steps=1 rewards=1.00
 
 [START] task=route env=customer_support_env model=meta-llama/Llama-3.1-8B-Instruct
 ...
 ```
+
+No additional line types are printed to stdout.
+
+## Hugging Face Space Deployment
+
+1. Create a new Docker Space.
+2. Push this repository.
+3. Ensure Space secrets include `API_BASE_URL`, `MODEL_NAME`, and `HF_TOKEN`.
+4. Confirm the app responds on port `7860`.
+
+Space metadata is already included in this README frontmatter and tagged with `openenv`.
+
+## Pre-submission Validation
+
+Use the validator script before submitting:
+
+```bash
+chmod +x scripts/validate-submission.sh
+./scripts/validate-submission.sh https://your-space.hf.space .
+```
+
+This checks:
+- Space `/reset` responds with HTTP 200
+- Docker build succeeds
+- `openenv validate` passes
 
 ---
 

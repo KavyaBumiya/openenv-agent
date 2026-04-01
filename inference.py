@@ -9,23 +9,20 @@ OpenAI-compatible client (works with HuggingFace router, Groq, Ollama, etc.).
 Required environment variables:
   API_BASE_URL   LLM endpoint  (default: https://router.huggingface.co/v1)
   MODEL_NAME     Model name    (default: meta-llama/Llama-3.1-8B-Instruct)
-  HF_TOKEN       API token     (required)
+    HF_TOKEN / OPENAI_API_KEY  API token (required)
 
 Optional:
   ENV_BASE_URL   Deployed environment URL
                  (default: http://localhost:7860 — for local docker testing)
 
 Usage:
-  export HF_TOKEN="hf_..."
+    export HF_TOKEN="hf_..."   # or OPENAI_API_KEY
   python inference.py
 """
 
-import asyncio
 import json
-import logging
 import os
 import re
-import sys
 import textwrap
 from typing import List, Optional
 
@@ -37,13 +34,16 @@ from openai import OpenAI
 # ---------------------------------------------------------------------------
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME   = os.getenv("MODEL_NAME",   "meta-llama/Llama-3.1-8B-Instruct")
-HF_TOKEN     = os.getenv("HF_TOKEN") or os.getenv("API_KEY", "")
+HF_TOKEN     = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY", "")
 ENV_BASE_URL = os.getenv("ENV_BASE_URL", "http://localhost:7860")
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME", "")
 
 BENCHMARK       = "customer_support_env"
 TASKS           = ["classify", "route", "resolve"]
 NUM_SEEDS       = 3        # seeds per task  →  9 total episodes
-TEMPERATURE     = 0.3
+SEEDS           = list(range(NUM_SEEDS))
+MAX_STEPS       = 5
+TEMPERATURE     = 0.0
 MAX_TOKENS      = 512
 SUCCESS_THRESH  = 0.1      # episode counted as success if score >= this
 
@@ -51,8 +51,7 @@ SUCCESS_THRESH  = 0.1      # episode counted as success if score >= this
 # Validate credentials early
 # ---------------------------------------------------------------------------
 if not HF_TOKEN:
-    print("[ERROR] HF_TOKEN is not set. Export it and retry.", flush=True)
-    sys.exit(1)
+    raise RuntimeError("Missing API key. Set HF_TOKEN or OPENAI_API_KEY.")
 
 # ---------------------------------------------------------------------------
 # LLM client
@@ -77,14 +76,9 @@ def log_step(step: int, action: str, reward: float,
     )
 
 
-def log_end(success: bool, steps: int,
-            score: float, rewards: List[float]) -> None:
+def log_end(success: bool, steps: int, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(
-        f"[END] success={str(success).lower()} steps={steps} "
-        f"score={score:.3f} rewards={rewards_str}",
-        flush=True,
-    )
+    print(f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}", flush=True)
 
 # ---------------------------------------------------------------------------
 # Environment HTTP client
@@ -223,73 +217,77 @@ def call_llm(task: str, obs: dict) -> Optional[dict]:
         raw = (resp.choices[0].message.content or "").strip()
         return extract_json(raw, REQUIRED_KEYS[task])
     except Exception as exc:
-        logging.warning("LLM call failed: %s", exc)
+        _ = exc
         return None
 
 # ---------------------------------------------------------------------------
 # Episode runner
 # ---------------------------------------------------------------------------
 
-def run_episode(env: EnvClient, task: str, seed: int) -> None:
+def run_episode(env: EnvClient, task: str, seed: int) -> tuple[bool, float]:
     rewards: List[float] = []
     steps = 0
-    score = 0.0
     success = False
+    final_obs: dict = {}
 
     log_start(task=task, env=BENCHMARK, model=MODEL_NAME)
 
     try:
         obs = env.reset(task=task, seed=seed)
 
-        action_dict = call_llm(task, obs)
-        error_msg = None
+        for step in range(1, MAX_STEPS + 1):
+            action_dict = call_llm(task, obs)
+            error_msg = None
 
-        if action_dict is None:
-            error_msg = "LLM parse failed — using fallback"
-            # Minimal valid action so environment doesn't crash
-            action_dict = {
-                "category": "general",
-                "priority": "low",
-                "department": "tier1",
-                "requires_escalation": False,
-                "response": "Thank you for contacting us. We will follow up shortly.",
+            if action_dict is None:
+                error_msg = "LLM parse failed - using fallback"
+                action_dict = {
+                    "category": "general",
+                    "priority": "low",
+                    "department": "tier1",
+                    "requires_escalation": False,
+                    "response": "Thanks for reaching out. We are reviewing this now and will follow up with next steps shortly.",
+                }
+
+            payload: dict = {
+                "category": action_dict.get("category", "general"),
+                "priority": action_dict.get("priority", "low"),
+                "department": action_dict.get("department"),
+                "requires_escalation": action_dict.get("requires_escalation", False),
+                "response": action_dict.get("response"),
             }
 
-        # Build step payload (only include keys valid for this task)
-        payload: dict = {
-            "category":           action_dict.get("category", "general"),
-            "priority":           action_dict.get("priority", "low"),
-            "department":         action_dict.get("department"),
-            "requires_escalation": action_dict.get("requires_escalation", False),
-            "response":           action_dict.get("response"),
-        }
+            result = env.step(payload)
+            reward = float(result.get("reward", 0.0))
+            done = bool(result.get("done", True))
+            final_obs = result.get("observation", {}) or {}
 
-        result   = env.step(payload)
-        reward   = float(result.get("reward", 0.0))
-        done     = bool(result.get("done", True))
+            rewards.append(reward)
+            steps = step
 
-        rewards.append(reward)
-        steps = 1
+            action_str = (
+                f"category={payload['category']} priority={payload['priority']}"
+                + (f" dept={payload['department']}" if payload.get("department") else "")
+                + (f" esc={str(payload['requires_escalation']).lower()}" if payload.get("requires_escalation") is not None else "")
+                + (f" resp=<{len(payload['response'])}chars>" if payload.get("response") else "")
+            )
+            log_step(step=step, action=action_str, reward=reward, done=done, error=error_msg)
 
-        # Human-readable action string for the log
-        action_str = (
-            f"category={payload['category']} priority={payload['priority']}"
-            + (f" dept={payload['department']}" if payload.get("department") else "")
-            + (f" esc={payload['requires_escalation']}" if payload.get("requires_escalation") else "")
-            + (f" resp=<{len(payload['response'])}chars>" if payload.get("response") else "")
-        )
+            obs = final_obs
+            if done:
+                break
 
-        log_step(step=1, action=action_str, reward=reward, done=done, error=error_msg)
-
-        score   = reward
-        success = score >= SUCCESS_THRESH
+        score = sum(rewards)
+        success = score >= SUCCESS_THRESH and bool(final_obs)
 
     except Exception as exc:
         log_step(step=steps + 1, action="<error>", reward=0.0, done=True, error=str(exc))
         rewards = rewards or [0.0]
-        score   = 0.0
 
-    log_end(success=success, steps=steps or 1, score=score, rewards=rewards or [0.0])
+    final_rewards = rewards or [0.0]
+    final_steps = steps or 1
+    log_end(success=success, steps=final_steps, rewards=final_rewards)
+    return success, sum(final_rewards)
 
 
 # ---------------------------------------------------------------------------
@@ -298,13 +296,26 @@ def run_episode(env: EnvClient, task: str, seed: int) -> None:
 
 def main() -> None:
     env = EnvClient(ENV_BASE_URL)
+    results: dict[str, list[float]] = {task: [] for task in TASKS}
     try:
         for task in TASKS:
-            print(flush=True)   # blank line between tasks for readability
-            for seed in range(NUM_SEEDS):
-                run_episode(env, task, seed)
+            for seed in SEEDS:
+                _, total_reward = run_episode(env, task, seed)
+                results[task].append(total_reward)
     finally:
         env.close()
+
+    # Keep strict stdout reserved for [START]/[STEP]/[END] lines only.
+    # Baseline aggregates are written to stderr for operator visibility.
+    for task in TASKS:
+        task_scores = results[task]
+        mean_score = (sum(task_scores) / len(task_scores)) if task_scores else 0.0
+        print(
+            f"task={task} episodes={len(task_scores)} mean_total_reward={mean_score:.3f} "
+            f"model={MODEL_NAME} api_base={API_BASE_URL} local_image={LOCAL_IMAGE_NAME or 'none'}",
+            file=os.sys.stderr,
+            flush=True,
+        )
 
 
 if __name__ == "__main__":

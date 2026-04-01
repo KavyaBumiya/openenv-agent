@@ -72,7 +72,13 @@ def test_resolve_task():
         requires_escalation=True
     )
     result = env.step(action)
-    
+
+    # Hard task supports trajectory steps; first step may not end the episode.
+    if not result.done:
+        result = env.step(action)
+    if not result.done:
+        result = env.step(action)
+
     assert result.done is True
     assert result.reward is not None
     assert 0.0 <= result.reward <= 1.0

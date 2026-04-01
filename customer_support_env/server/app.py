@@ -23,13 +23,13 @@ from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnec
 from pydantic import BaseModel, Field
 
 from ..environment import CustomerSupportEnvironment
-from ..models import TicketAction, TicketObservation
+from ..models import StepInfo, TicketAction, TicketObservation
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Customer Support RL Environment",
-    description="OpenEnv-compliant single-turn ticket triage environment.",
+    description="OpenEnv-compliant customer-support ticket triage environment.",
     version="0.1.0",
 )
 
@@ -203,7 +203,8 @@ async def step(req: StepRequest):
         done   = obs_dict.pop("done",   True)
         _sessions[req.session_id] = (env, obs)
         logger.debug("step session=%s reward=%.3f", req.session_id, reward)
-        return {"observation": obs_dict, "reward": reward, "done": done}
+        info = StepInfo(**env.build_step_info()).model_dump()
+        return {"observation": obs_dict, "reward": reward, "done": done, "info": info}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -217,7 +218,7 @@ async def get_state(session_id: str = Query(...)):
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
     try:
         env, _ = _sessions[session_id]
-        state  = env.state.model_dump()
+        state  = env.state().model_dump()
         if env._ticket:
             state["current_ticket_id"] = env._ticket["id"]
         return state
@@ -259,7 +260,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 obs_dict = obs.model_dump()
                 reward   = obs_dict.pop("reward", 0.0)
                 done     = obs_dict.pop("done", True)
-                await websocket.send_json({"observation": obs_dict, "reward": reward, "done": done})
+                info = StepInfo(**ws_env.build_step_info()).model_dump()
+                await websocket.send_json({"observation": obs_dict, "reward": reward, "done": done, "info": info})
 
             else:
                 await websocket.send_json({"error": f"Unknown action: {action_type}"})

@@ -1,13 +1,13 @@
 name: customer_support_env
 version: 0.1.0
 description: >
-  Single-turn LLM agent environment for customer support ticket triage.
+  Multi-turn LLM agent environment for customer support ticket triage.
   Agents classify, route, and resolve real-world support tickets with
-  business-aware graders that reward partial progress.
+  business-aware graders that reward trajectory progress.
 
 api_spec: openenv_0.1
 environment_type: rl
-episode_type: single-turn
+episode_type: multi-turn
 
 tasks:
   - name: classify
@@ -42,7 +42,7 @@ tasks:
       Classify a ticket and route it to the right department
       (tier1/tier2/billing/engineering/management), with optional escalation flag.
     difficulty: medium
-    max_steps: 1
+    max_steps: 2
     action_schema:
       category:
         type: string
@@ -78,7 +78,7 @@ tasks:
       customer-facing response that acknowledges the issue and provides
       actionable next steps.
     difficulty: hard
-    max_steps: 1
+    max_steps: 3
     action_schema:
       category:
         type: string
@@ -114,6 +114,11 @@ tasks:
 reward_config:
   type: shaped
   range: [0.0, 1.0]
+  trajectory:
+    progress_signal: best_score_improvement
+    penalties:
+      repeated_actions: 0.15
+      extra_step: 0.05
   tasks:
     classify:
       weights: {category: 0.6, priority: 0.4}

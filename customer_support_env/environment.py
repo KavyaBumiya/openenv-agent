@@ -8,7 +8,7 @@ from typing import Dict, Any
 
 from .openenv_compat import Environment
 
-from .models import TicketAction, TicketObservation, TicketState
+from .models import TicketAction, TicketObservation, TicketReward, TicketState
 from .data import TICKETS
 
 # Configure logging
@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 
 
 class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, TicketState]):
-    """Single-turn ticket processing environment.
-    
-    Design: Each episode is one ticket, one task, one action.
+    """Customer support ticket environment with trajectory-shaped rewards.
+
+    Design:
     - reset() picks a ticket and task
-    - step() processes the action, grades it, returns done=True
-    - Reward encodes task performance with shaped signals
+    - step() supports task-dependent multi-step trajectories
+    - reward provides partial progress, loop penalties, and time penalties
     """
     
     SUPPORTS_CONCURRENT_SESSIONS = True
@@ -55,6 +55,10 @@ class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, Ti
     # Response content penalties
     RESPONSE_ACTION_PHRASE_PENALTY = 0.2  # Reduce score if no concrete action phrases
     RESPONSE_FILLER_PENALTY = 0.3  # Reduce score if mostly filler content
+
+    # Trajectory shaping penalties
+    LOOP_PENALTY = 0.15
+    EXTRA_STEP_PENALTY = 0.05
     
     # Sentiment-aware response bonuses
     SENTIMENT_EMPATHY_BONUS = 0.1  # Bonus for empathetic response when frustrated customer
@@ -65,6 +69,13 @@ class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, Ti
     
     # Priority distance scoring
     PRIORITY_EXACT_SCORE = 1.0
+    
+    # Max trajectory length by task difficulty.
+    TASK_MAX_STEPS = {
+        "classify": 1,
+        "route": 2,
+        "resolve": 3,
+    }
     PRIORITY_ONE_STEP_SCORE = 0.6
     PRIORITY_TWO_STEP_SCORE = 0.2
     PRIORITY_THREE_PLUS_STEP_SCORE = 0.0
@@ -157,7 +168,7 @@ ESCALATION CRITERIA (requires_escalation=true):
     
     def reset(self, seed=None, episode_id=None, task="classify", **kwargs) -> TicketObservation:
         """Reset environment for new episode: pick ticket, set task, initialize state.
-        
+
         Args:
             seed: Reproducible ticket selector (seed % len(TICKETS) = ticket index). If None, picks randomly.
             episode_id: Episode identifier (generated if not provided)
@@ -185,6 +196,9 @@ ESCALATION CRITERIA (requires_escalation=true):
             step_count=0,
             task_name=task,
             difficulty=self.DIFFICULTY_MAP[task],
+            max_steps=self.TASK_MAX_STEPS[task],
+            best_score=0.0,
+            cumulative_reward=0.0,
         )
         
         # Step 3: Return initial observation
@@ -217,8 +231,8 @@ ESCALATION CRITERIA (requires_escalation=true):
     
     def step(self, action: TicketAction, timeout_s=None, **kwargs) -> TicketObservation:
         """Process one action, grade it, return score and feedback.
-        
-        Single-turn: always returns done=True after one step.
+
+        Multi-step: done depends on task max steps or near-perfect completion.
         
         Args:
             action: Agent's TicketAction response
@@ -237,11 +251,16 @@ ESCALATION CRITERIA (requires_escalation=true):
         
         # Try to grade, gracefully handle malformed actions
         try:
-            reward = self._grade(action)
-            feedback = self._build_feedback(action, reward)
+            raw_score = self._grade(action)
+            reward = self._shape_step_reward(action, raw_score)
+            feedback = self._build_feedback(action, raw_score)
         except Exception as e:
+            raw_score = 0.0
             reward = 0.0
             feedback = f"Could not grade action: {str(e)}"
+
+        self._state.cumulative_reward = round(self._state.cumulative_reward + reward, 3)
+        done = self._compute_done(raw_score)
         
         # Return final observation: single-turn always done after one step
         # Build policy excerpt: routing policy + category-specific policy
@@ -262,23 +281,75 @@ ESCALATION CRITERIA (requires_escalation=true):
             task_description=self.TASK_DESCRIPTIONS[self._task],
             action_schema=self.ACTION_SCHEMAS[self._task],
             policy_excerpt=policy_excerpt,
-            feedback=feedback,
+            feedback=(
+                f"{feedback} | step={self._state.step_count}/{self._state.max_steps} "
+                f"| best_score={self._state.best_score:.2f} | cumulative_reward={self._state.cumulative_reward:.2f}"
+            ),
             previous_tickets=self._ticket.get("previous_tickets", 0),
-            done=True,
+            done=done,
             reward=reward,
         )
-    
-    @property
+
     def state(self) -> TicketState:
-        """Access current state (uses @property, no parentheses)."""
+        """Return current state for OpenEnv compatibility."""
         return self._state
-    
-    def get_state(self) -> TicketState:
-        """Get the current state (method form for OpenEnv compatibility).
-        
-        Returns the same state as the property.
-        """
-        return self.state
+
+    def _compute_done(self, raw_score: float) -> bool:
+        if raw_score >= 0.95:
+            return True
+        return self._state.step_count >= self._state.max_steps
+
+    def build_step_info(self) -> dict:
+        """Return structured info for step(action) API compatibility."""
+        return {
+            "step_count": self._state.step_count,
+            "max_steps": self._state.max_steps,
+            "best_score": self._state.best_score,
+            "cumulative_reward": self._state.cumulative_reward,
+        }
+
+    def _shape_step_reward(self, action: TicketAction, raw_score: float) -> float:
+        prev_best = self._state.best_score
+        progress_gain = max(0.0, raw_score - prev_best)
+        step_penalty = self.EXTRA_STEP_PENALTY * max(0, self._state.step_count - 1)
+
+        signature = self._action_signature(action)
+        repeated_action = signature in self._state.action_history
+        loop_penalty = self.LOOP_PENALTY if repeated_action else 0.0
+
+        shaped = max(0.0, progress_gain - step_penalty - loop_penalty)
+
+        self._state.best_score = round(max(self._state.best_score, raw_score), 3)
+        self._state.action_history.append(signature)
+        return round(min(1.0, shaped), 3)
+
+    def build_reward(self, action: TicketAction, raw_score: float) -> TicketReward:
+        """Build a typed reward model with transparent shaping components."""
+        prev_best = self._state.best_score
+        progress_gain = max(0.0, raw_score - prev_best)
+        step_penalty = self.EXTRA_STEP_PENALTY * max(0, self._state.step_count - 1)
+        loop_penalty = self.LOOP_PENALTY if self._action_signature(action) in self._state.action_history else 0.0
+        final_reward = max(0.0, progress_gain - step_penalty - loop_penalty)
+        return TicketReward(
+            value=round(min(1.0, final_reward), 3),
+            raw_score=round(raw_score, 3),
+            progress_gain=round(progress_gain, 3),
+            repeated_action_penalty=round(loop_penalty, 3),
+            extra_step_penalty=round(step_penalty, 3),
+        )
+
+    def _action_signature(self, action: TicketAction) -> str:
+        response = (action.response or "").strip().lower()
+        response = re.sub(r"\s+", " ", response)
+        return "|".join(
+            [
+                (action.category or "").strip().lower(),
+                (action.priority or "").strip().lower(),
+                (action.department or "").strip().lower(),
+                str(bool(action.requires_escalation)).lower(),
+                response,
+            ]
+        )
     
     def _grade(self, action: TicketAction) -> float:
         """Score the action against ground truth, applying task-specific weights.

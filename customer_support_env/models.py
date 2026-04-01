@@ -159,6 +159,54 @@ class TicketObservation(Observation):
     )
 
 
+class TicketReward(BaseModel):
+    """Typed reward payload for each step."""
+
+    value: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Final shaped reward value in [0.0, 1.0] for this step.",
+    )
+
+    raw_score: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Task grader score before trajectory shaping penalties.",
+    )
+
+    progress_gain: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Positive improvement compared with best prior score in this episode.",
+    )
+
+    repeated_action_penalty: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Penalty applied when repeating an action signature.",
+    )
+
+    extra_step_penalty: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Penalty applied for additional steps beyond the first.",
+    )
+
+
+class StepInfo(BaseModel):
+    """Auxiliary info payload returned by step API."""
+
+    step_count: int = Field(..., ge=1)
+    max_steps: int = Field(..., ge=1)
+    best_score: float = Field(..., ge=0.0, le=1.0)
+    cumulative_reward: float = Field(..., ge=0.0)
+
+
 class TicketState(State):
     """Internal environment memory (not visible to agent)."""
 
@@ -180,4 +228,24 @@ class TicketState(State):
     difficulty: str = Field(
         default="easy",
         description="Difficulty level: easy | medium | hard.",
+    )
+
+    max_steps: int = Field(
+        default=1,
+        description="Maximum allowed steps for this episode.",
+    )
+
+    best_score: float = Field(
+        default=0.0,
+        description="Best raw grader score seen so far in this episode.",
+    )
+
+    cumulative_reward: float = Field(
+        default=0.0,
+        description="Sum of shaped rewards emitted across the trajectory.",
+    )
+
+    action_history: list[str] = Field(
+        default_factory=list,
+        description="Normalized action signatures seen during the episode.",
     )

@@ -51,9 +51,8 @@ class Environment(Generic[ActionType, ObservationType, StateType]):
         """Initialize the environment."""
         self.done = False
 
-    @property
     def state(self) -> StateType:
-        """Read-only access to current environment state."""
+        """Return current environment state."""
         raise NotImplementedError
     
     def reset(self) -> ObservationType:
@@ -68,11 +67,6 @@ class Environment(Generic[ActionType, ObservationType, StateType]):
         """
         raise NotImplementedError
     
-    def get_state(self) -> StateType:
-        """Get the current state."""
-        raise NotImplementedError
-
-
 class EnvClient(Generic[ActionType, ObservationType, StateType]):
     """Base class for environment clients (e.g., WebSocket communication)."""
     
