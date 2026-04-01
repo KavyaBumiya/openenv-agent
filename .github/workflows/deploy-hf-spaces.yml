@@ -8,7 +8,6 @@ on:
 env:
   REPO_TYPE: space
   REPO_ID: ${{ github.repository_owner }}/customer-support-env
-  HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
 jobs:
   deploy:
@@ -113,7 +112,7 @@ jobs:
 
     steps:
       - name: Send Slack notification
-        if: success()
+        if: success() && secrets.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
@@ -134,7 +133,7 @@ jobs:
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
       - name: Send Slack notification (failure)
-        if: failure()
+        if: failure() && secrets.SLACK_WEBHOOK_URL != ''
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
