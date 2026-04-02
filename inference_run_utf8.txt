@@ -1,0 +1,11 @@
+﻿d:/Hackathon/.venv/Scripts/python.exe : Traceback (most recent call last):
+At line:1 char:100
++ ... .hf.space'; d:/Hackathon/.venv/Scripts/python.exe inference.py *> inf ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], Remot 
+   eException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "D:\Hackathon\openenv-agent\inference.py", line 54, in <module>
+    raise RuntimeError("Missing API key. Set HF_TOKEN or OPENAI_API_KEY.")
+RuntimeError: Missing API key. Set HF_TOKEN or OPENAI_API_KEY.

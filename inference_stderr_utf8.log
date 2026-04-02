@@ -1,0 +1,13 @@
+﻿d:/Hackathon/.venv/Scripts/python.exe : task=classify episodes=3 mean_total_reward=0.869 
+model=meta-llama/Llama-3.1-8B-Instruct api_base=https://router.huggingface.co/v1 local_image=none
+At line:1 char:261
++ ... .hf.space'; d:/Hackathon/.venv/Scripts/python.exe inference.py > infe ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (task=classify e...ocal_image=none:String) [], Remote 
+   Exception
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+task=route episodes=3 mean_total_reward=0.668 model=meta-llama/Llama-3.1-8B-Instruct 
+api_base=https://router.huggingface.co/v1 local_image=none
+task=resolve episodes=3 mean_total_reward=0.634 model=meta-llama/Llama-3.1-8B-Instruct 
+api_base=https://router.huggingface.co/v1 local_image=none
