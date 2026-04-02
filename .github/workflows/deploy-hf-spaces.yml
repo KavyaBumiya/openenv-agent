@@ -35,8 +35,8 @@ jobs:
           # Remove existing remote
           git remote remove hf || true
           
-          # Add HF Spaces remote with token authentication
-          git remote add hf https://git:${{ secrets.HF_TOKEN }}@huggingface.co/${{ env.REPO_ID }}
+          # Add HF Spaces remote with token authentication (oauth2 format)
+          git remote add hf https://oauth2:${{ secrets.HF_TOKEN }}@huggingface.co/${{ env.REPO_ID }}
           
           # Force push to HF Spaces
           git push --force hf main
@@ -103,64 +103,5 @@ jobs:
           echo "⚠️ Space may not be ready yet. Check HF dashboard for status."
           exit 0  # Don't fail; HF Spaces may take longer to warm up
 
-  # Notify on deployment
-  notify:
-    needs: deploy
-    if: always()
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Send Slack notification
-        if: success()
-        uses: slackapi/slack-github-action@v1.24.0
-        with:
-          payload: |
-            {
-              "text": "✅ Deployed to HF Spaces",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*Deployment Status:* Success ✅\n*Environment:* HF Spaces\n*Space URL:* https://huggingface.co/spaces/${{ env.REPO_ID }}\n*Commit:* ${{ github.sha }}"
-                  }
-                }
-              ]
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
-
-      - name: Send Slack notification (failure)
-        if: failure()
-        uses: slackapi/slack-github-action@v1.24.0
-        with:
-          payload: |
-            {
-              "text": "❌ Deployment to HF Spaces failed",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*Deployment Status:* Failed ❌\n*Environment:* HF Spaces\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}"
-                  }
-                },
-                {
-                  "type": "actions",
-                  "elements": [
-                    {
-                      "type": "button",
-                      "text": {
-                        "type": "plain_text",
-                        "text": "View Logs"
-                      },
-                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                    }
-                  ]
-                }
-              ]
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+  # Notify on deployment (optional)
+  # Complete once SLACK_WEBHOOK_URL secret is added
