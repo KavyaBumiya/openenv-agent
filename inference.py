@@ -4,15 +4,12 @@ inference.py — OpenEnv baseline agent for customer_support_env
 ===============================================================
 
 Calls the deployed environment via HTTP and queries the LLM using the
-OpenAI-compatible client (works with HuggingFace router, Groq, Ollama, etc.).
+OpenAI-compatible client.
 
 Required environment variables:
     API_BASE_URL      LLM endpoint  (default: https://router.huggingface.co/v1)
     MODEL_NAME        Model name    (default: meta-llama/Llama-3.1-8B-Instruct)
-    OPENAI_API_KEY    API token (recommended by OpenEnv guidelines)
-
-Compatibility:
-    HF_TOKEN is also accepted for Hugging Face router workflows.
+    HF_TOKEN          API token     (required)
 
 Optional:
     ENV_BASE_URL   Deployed environment URL
@@ -22,7 +19,7 @@ Optional:
     LOCAL_IMAGE_NAME   Preserved for compatibility with the submission harness
 
 Usage:
-        export OPENAI_API_KEY="..."   # or HF_TOKEN
+    export HF_TOKEN="..."
   python inference.py
 """
 
@@ -39,10 +36,8 @@ from openai import OpenAI
 # Configuration
 # ---------------------------------------------------------------------------
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME   = os.getenv("MODEL_NAME",   "meta-llama/Llama-3.1-8B-Instruct")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-HF_TOKEN       = os.getenv("HF_TOKEN", "")
-API_KEY        = OPENAI_API_KEY or HF_TOKEN
+MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
+HF_TOKEN = os.getenv("HF_TOKEN")
 ENV_BASE_URL = os.getenv("ENV_BASE_URL", "http://localhost:7860")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME", "")
 BASELINE_OUTPUT_PATH = os.getenv("BASELINE_OUTPUT_PATH", "baseline_scores.json")
@@ -59,13 +54,13 @@ SUCCESS_THRESH  = 0.1      # episode counted as success if score >= this
 # ---------------------------------------------------------------------------
 # Validate credentials early
 # ---------------------------------------------------------------------------
-if not API_KEY:
-    raise RuntimeError("Missing API key. Set OPENAI_API_KEY (preferred) or HF_TOKEN.")
+if not HF_TOKEN:
+    raise RuntimeError("Missing required HF_TOKEN environment variable.")
 
 # ---------------------------------------------------------------------------
 # LLM client
 # ---------------------------------------------------------------------------
-llm_client = OpenAI(api_key=API_KEY, base_url=API_BASE_URL)
+llm_client = OpenAI(api_key=HF_TOKEN, base_url=API_BASE_URL)
 
 # ---------------------------------------------------------------------------
 # Structured logging helpers  (spec-required format)
@@ -77,9 +72,9 @@ def log_start(task: str, env: str, model: str) -> None:
 
 def log_step(step: int, action: str, reward: float,
              done: bool, error: Optional[str]) -> None:
-    err = error if error else "null"
+    err = _sanitize_single_line(error) if error else "null"
     print(
-        f"[STEP] step={step} action={action[:120]} "
+        f"[STEP] step={step} action={_sanitize_single_line(action)} "
         f"reward={reward:.2f} done={str(done).lower()} error={err}",
         flush=True,
     )
@@ -88,6 +83,12 @@ def log_step(step: int, action: str, reward: float,
 def log_end(success: bool, steps: int, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}", flush=True)
+
+
+def _sanitize_single_line(value: Optional[str]) -> str:
+    if value is None:
+        return "null"
+    return value.replace("\r", " ").replace("\n", " ").strip()
 
 # ---------------------------------------------------------------------------
 # Environment HTTP client
@@ -114,7 +115,18 @@ class EnvClient:
     def step(self, action: dict) -> dict:
         payload = {"session_id": self.session_id, **action}
         r = self.http.post(f"{self.base}/step", json=payload)
-        r.raise_for_status()
+        try:
+            r.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            detail = None
+            try:
+                payload_data = r.json()
+                if isinstance(payload_data, dict):
+                    detail = payload_data.get("detail") or payload_data.get("message")
+            except Exception:
+                detail = None
+            message = detail or r.text or str(exc)
+            raise RuntimeError(message) from exc
         return r.json()   # {observation, reward, done}
 
     def close(self) -> None:
@@ -223,8 +235,8 @@ def extract_json(text: str, required_keys: List[str]) -> Optional[dict]:
     return None
 
 
-def call_llm(task: str, obs: dict, episode_seed: int, step: int) -> Optional[dict]:
-    """Query the LLM and return a parsed action dict, or None on failure."""
+def call_llm(task: str, obs: dict, episode_seed: int, step: int) -> tuple[Optional[dict], Optional[str]]:
+    """Query the LLM and return (action_dict, error_message)."""
     try:
         resp = llm_client.chat.completions.create(
             model=MODEL_NAME,
@@ -238,10 +250,12 @@ def call_llm(task: str, obs: dict, episode_seed: int, step: int) -> Optional[dic
             max_tokens=MAX_TOKENS,
         )
         raw = (resp.choices[0].message.content or "").strip()
-        return extract_json(raw, REQUIRED_KEYS[task])
+        parsed = extract_json(raw, REQUIRED_KEYS[task])
+        if parsed is None:
+            return None, "LLM parse failed - using fallback"
+        return parsed, None
     except Exception as exc:
-        _ = exc
-        return None
+        return None, _sanitize_single_line(str(exc))
 
 # ---------------------------------------------------------------------------
 # Episode runner
@@ -261,11 +275,10 @@ def run_episode(task: str, seed: int) -> tuple[bool, float]:
         obs = env.reset(task=task, seed=seed)
 
         for step in range(1, MAX_STEPS + 1):
-            action_dict = call_llm(task, obs, episode_seed=seed, step=step)
-            error_msg = None
+            action_dict, llm_error = call_llm(task, obs, episode_seed=seed, step=step)
+            error_msg = llm_error
 
             if action_dict is None:
-                error_msg = "LLM parse failed - using fallback"
                 action_dict = {
                     "category": "general",
                     "priority": "low",
@@ -282,27 +295,36 @@ def run_episode(task: str, seed: int) -> tuple[bool, float]:
                 "response": action_dict.get("response"),
             }
 
-            result = env.step(payload)
-            reward = float(result.get("reward", 0.0))
-            done = bool(result.get("done", True))
-            final_obs = result.get("observation", {}) or {}
-            last_action_error = final_obs.get("last_action_error") if isinstance(final_obs, dict) else None
+            result = None
+            reward = 0.0
+            done = False
+            final_obs: dict = {}
+            step_error: Optional[str] = error_msg
+
+            try:
+                result = env.step(payload)
+                reward = float(result.get("reward", 0.0))
+                done = bool(result.get("done", True))
+                final_obs = result.get("observation", {}) or {}
+                last_action_error = final_obs.get("last_action_error") if isinstance(final_obs, dict) else None
+                if last_action_error is not None:
+                    step_error = str(last_action_error)
+            except Exception as exc:
+                reward = 0.0
+                done = False
+                final_obs = {}
+                step_error = str(exc)
 
             rewards.append(reward)
             steps = step
 
-            action_str = (
-                f"category={payload['category']} priority={payload['priority']}"
-                + (f" dept={payload['department']}" if payload.get("department") else "")
-                + (f" esc={str(payload['requires_escalation']).lower()}" if payload.get("requires_escalation") is not None else "")
-                + (f" resp=<{len(payload['response'])}chars>" if payload.get("response") else "")
-            )
+            action_str = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
             log_step(
                 step=step,
                 action=action_str,
                 reward=reward,
                 done=done,
-                error=last_action_error if last_action_error is not None else error_msg,
+                error=step_error,
             )
 
             obs = final_obs
@@ -316,7 +338,10 @@ def run_episode(task: str, seed: int) -> tuple[bool, float]:
         # Keep stdout strict: no extra line types besides START/STEP/END.
         success = False
     finally:
-        env.close()
+        try:
+            env.close()
+        except Exception as exc:
+            print(f"[WARN] env.close failed: {_sanitize_single_line(str(exc))}", file=os.sys.stderr, flush=True)
         final_rewards = rewards or [0.0]
         final_steps = steps or 0
         log_end(success=success, steps=final_steps, rewards=final_rewards)

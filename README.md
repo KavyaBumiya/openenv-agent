@@ -130,7 +130,7 @@ uvicorn customer_support_env.server.app:app --port 7860
 # Run the baseline agent (in another terminal)
 export API_BASE_URL="https://router.huggingface.co/v1"
 export MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
-export OPENAI_API_KEY="your_api_key_here"
+export HF_TOKEN="your_openai_compatible_token_here"
 python inference.py
 ```
 
@@ -141,7 +141,7 @@ docker build -t customer-support-env .
 docker run \
   -e API_BASE_URL="https://router.huggingface.co/v1" \
   -e MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct" \
-  -e OPENAI_API_KEY="your_api_key_here" \
+  -e HF_TOKEN="your_openai_compatible_token_here" \
   -p 7860:7860 \
   customer-support-env
 ```
@@ -152,8 +152,7 @@ docker run \
 |----------|---------|-------------|
 | `API_BASE_URL` | `https://router.huggingface.co/v1` | OpenAI-compatible LLM endpoint |
 | `MODEL_NAME` | `meta-llama/Llama-3.1-8B-Instruct` | Model identifier |
-| `OPENAI_API_KEY` | *(recommended)* | OpenAI-compatible API token used by `inference.py` |
-| `HF_TOKEN` | *(optional compatibility)* | Alternate token name accepted by `inference.py` |
+| `HF_TOKEN` | required | OpenAI-compatible API token used by `inference.py` |
 | `ENV_BASE_URL` | `http://localhost:7860` | Deployed environment URL used by `inference.py` |
 | `LOCAL_IMAGE_NAME` | *(optional)* | Local image name for docker-image workflows |
 | `BASELINE_OUTPUT_PATH` | `baseline_scores.json` | File where baseline aggregate scores are written |
@@ -168,7 +167,7 @@ docker run \
 | `/tasks` | GET | List all 3 tasks with schemas |
 | `/grader` | GET | Reward-function documentation |
 | `/reset` | POST | Start episode → returns `{session_id, observation}` |
-| `/step` | POST | Submit action → returns `{observation, reward, done}` |
+| `/step` | POST | Submit action → returns `{observation, reward, done, info}` |
 | `/state` | GET | Current episode state |
 | `/ws` | WS | WebSocket for real-time loops |
 
@@ -218,7 +217,7 @@ python inference.py
 The baseline script emits strict structured stdout lines required by evaluators:
 ```
 [START] task=classify env=customer_support_env model=meta-llama/Llama-3.1-8B-Instruct
-[STEP] step=1 action=category=billing priority=high reward=1.00 done=true error=null
+[STEP] step=1 action={"category":"billing","priority":"high","department":null,"requires_escalation":false,"response":null} reward=1.00 done=true error=null
 [END] success=true steps=1 rewards=1.00
 
 [START] task=route env=customer_support_env model=meta-llama/Llama-3.1-8B-Instruct

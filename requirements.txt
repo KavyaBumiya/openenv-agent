@@ -5,7 +5,7 @@ uvicorn[standard]>=0.24.0
 pydantic>=2.0.0
 websockets>=11.0
 
-# LLM — OpenAI client (works with HF router, Groq, Ollama, etc.)
+# LLM — OpenAI client (works with HF router and other OpenAI-compatible endpoints)
 openai>=1.0.0
 
 # HTTP requests for inference script (calling deployed API)

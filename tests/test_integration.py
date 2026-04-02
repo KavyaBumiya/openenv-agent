@@ -32,12 +32,12 @@ def test_classify_task():
         category="billing", priority="high", department=None,
         response=None, requires_escalation=False
     )
-    result = env.step(action)
+    result_obs, reward, done, info = env.step(action)
     
-    assert result.done is True
-    assert result.reward is not None
-    assert 0.0 <= result.reward <= 1.0
-    print(f"  reward={result.reward:.3f}")
+    assert done is True
+    assert reward is not None
+    assert 0.0 <= reward <= 1.0
+    print(f"  reward={reward:.3f}")
 
 
 def test_route_task():
@@ -51,12 +51,12 @@ def test_route_task():
         category="technical", priority="urgent", department="engineering",
         response=None, requires_escalation=True
     )
-    result = env.step(action)
+    result_obs, reward, done, info = env.step(action)
     
-    assert result.done is True
-    assert result.reward is not None
-    assert 0.0 <= result.reward <= 1.0
-    print(f"  reward={result.reward:.3f}")
+    assert done is True
+    assert reward is not None
+    assert 0.0 <= reward <= 1.0
+    print(f"  reward={reward:.3f}")
 
 
 def test_resolve_task():
@@ -71,18 +71,18 @@ def test_resolve_task():
         response="We're investigating immediately. Update within 2 hours.",
         requires_escalation=True
     )
-    result = env.step(action)
+    result_obs, reward, done, info = env.step(action)
 
     # Hard task supports trajectory steps; first step may not end the episode.
-    if not result.done:
-        result = env.step(action)
-    if not result.done:
-        result = env.step(action)
+    if not done:
+        result_obs, reward, done, info = env.step(action)
+    if not done:
+        result_obs, reward, done, info = env.step(action)
 
-    assert result.done is True
-    assert result.reward is not None
-    assert 0.0 <= result.reward <= 1.0
-    print(f"  reward={result.reward:.3f}")
+    assert done is True
+    assert reward is not None
+    assert 0.0 <= reward <= 1.0
+    print(f"  reward={reward:.3f}")
 
 
 def test_reward_penalization():
@@ -99,11 +99,11 @@ def test_reward_penalization():
         response=None,
         requires_escalation=False,
     )
-    result = env.step(action)
+    result_obs, reward, done, info = env.step(action)
     
-    assert result.reward is not None
-    assert result.reward < 0.5, f"Wrong answer should be penalized, got {result.reward}"
-    print(f"  penalty applied: reward={result.reward:.3f} (was 1.0 with correct answer)")
+    assert reward is not None
+    assert reward < 0.5, f"Wrong answer should be penalized, got {reward}"
+    print(f"  penalty applied: reward={reward:.3f} (was 1.0 with correct answer)")
 
 
 def test_seeding_reproducibility():

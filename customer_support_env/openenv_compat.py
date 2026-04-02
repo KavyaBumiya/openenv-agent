@@ -59,11 +59,11 @@ class Environment(Generic[ActionType, ObservationType, StateType]):
         """Reset the environment and return initial observation."""
         raise NotImplementedError
     
-    def step(self, action: ActionType) -> ObservationType:
+    def step(self, action: ActionType):
         """Execute one step with the given action.
-        
+
         Returns:
-            Final observation after processing action.
+            A 4-tuple of (observation, reward, done, info).
         """
         raise NotImplementedError
     

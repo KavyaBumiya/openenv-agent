@@ -8,7 +8,7 @@ from typing import Dict, Any
 
 from .openenv_compat import Environment
 
-from .models import TicketAction, TicketObservation, TicketReward, TicketState
+from .models import StepInfo, TicketAction, TicketObservation, TicketReward, TicketState
 from .data import TICKETS
 
 # Configure logging
@@ -49,11 +49,11 @@ class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, Ti
     # Response quality requirements (resolve task)
     RESPONSE_MIN_LENGTH = 20  # Minimum characters to count as valid response
     RESPONSE_LENGTH_PENALTY = 0.5  # Penalty multiplier if response too short
-    RESPONSE_KEYWORD_THRESHOLD = 0.75  # Must match this fraction of required keywords
+    RESPONSE_KEYWORD_THRESHOLD = 0.5   # Must match at least half of the required keywords
     RESPONSE_MIN_KEYWORDS_REQUIRED = 3  # Minimum keywords needed regardless of threshold
     
     # Response content penalties
-    RESPONSE_ACTION_PHRASE_PENALTY = 0.2  # Reduce score if no concrete action phrases
+    RESPONSE_ACTION_PHRASE_PENALTY = 0.1  # Reduce score if no concrete action phrases
     RESPONSE_FILLER_PENALTY = 0.3  # Reduce score if mostly filler content
 
     # Trajectory shaping penalties
@@ -229,7 +229,7 @@ ESCALATION CRITERIA (requires_escalation=true):
             reward=None,  # No reward yet on reset
         )
     
-    def step(self, action: TicketAction, timeout_s=None, **kwargs) -> TicketObservation:
+    def step(self, action: TicketAction, timeout_s=None, **kwargs) -> tuple[TicketObservation, float, bool, dict]:
         """Process one action, grade it, return score and feedback.
 
         Multi-step: done depends on task max steps or near-perfect completion.
@@ -239,7 +239,7 @@ ESCALATION CRITERIA (requires_escalation=true):
             timeout_s: Optional timeout (unused in single-turn)
             
         Returns:
-            Final observation with done=True, reward, and feedback
+            A 4-tuple of (observation, reward, done, info)
         """
         if self._ticket is None:
             raise RuntimeError("reset() must be called before step()")
@@ -250,16 +250,26 @@ ESCALATION CRITERIA (requires_escalation=true):
         action.validate_for_task(self._task)
         
         # Try to grade, gracefully handle malformed actions
+        reward_model: TicketReward
         try:
             raw_score = self._grade(action)
-            reward = self._shape_step_reward(action, raw_score)
+            reward_model = self.build_reward(action, raw_score)
             feedback = self._build_feedback(action, raw_score)
         except Exception as e:
             raw_score = 0.0
-            reward = 0.0
+            reward_model = TicketReward(
+                value=0.0,
+                raw_score=0.0,
+                progress_gain=0.0,
+                repeated_action_penalty=0.0,
+                extra_step_penalty=0.0,
+            )
             feedback = f"Could not grade action: {str(e)}"
 
+        reward = reward_model.value
         self._state.cumulative_reward = round(self._state.cumulative_reward + reward, 3)
+        self._state.best_score = round(max(self._state.best_score, raw_score), 3)
+        self._state.action_history.append(self._action_signature(action))
         done = self._compute_done(raw_score)
         
         # Return final observation: single-turn always done after one step
@@ -270,7 +280,7 @@ ESCALATION CRITERIA (requires_escalation=true):
             if category_policy:
                 policy_excerpt += "\n\n" + category_policy
         
-        return TicketObservation(
+        observation = TicketObservation(
             ticket_id=self._ticket["id"],
             subject=self._ticket["subject"],
             body=self._ticket["body"],
@@ -290,6 +300,22 @@ ESCALATION CRITERIA (requires_escalation=true):
             reward=reward,
         )
 
+        info = StepInfo(
+            step_count=self._state.step_count,
+            max_steps=self._state.max_steps,
+            best_score=self._state.best_score,
+            cumulative_reward=self._state.cumulative_reward,
+        ).model_dump()
+        info.update(
+            {
+                "raw_score": round(raw_score, 3),
+                "feedback": feedback,
+                "reward_breakdown": reward_model.model_dump(),
+            }
+        )
+
+        return observation, reward, done, info
+
     def state(self) -> TicketState:
         """Return current state for OpenEnv compatibility."""
         return self._state
@@ -298,30 +324,6 @@ ESCALATION CRITERIA (requires_escalation=true):
         if raw_score >= 0.95:
             return True
         return self._state.step_count >= self._state.max_steps
-
-    def build_step_info(self) -> dict:
-        """Return structured info for step(action) API compatibility."""
-        return {
-            "step_count": self._state.step_count,
-            "max_steps": self._state.max_steps,
-            "best_score": self._state.best_score,
-            "cumulative_reward": self._state.cumulative_reward,
-        }
-
-    def _shape_step_reward(self, action: TicketAction, raw_score: float) -> float:
-        prev_best = self._state.best_score
-        progress_gain = max(0.0, raw_score - prev_best)
-        step_penalty = self.EXTRA_STEP_PENALTY * max(0, self._state.step_count - 1)
-
-        signature = self._action_signature(action)
-        repeated_action = signature in self._state.action_history
-        loop_penalty = self.LOOP_PENALTY if repeated_action else 0.0
-
-        shaped = max(0.0, progress_gain - step_penalty - loop_penalty)
-
-        self._state.best_score = round(max(self._state.best_score, raw_score), 3)
-        self._state.action_history.append(signature)
-        return round(min(1.0, shaped), 3)
 
     def build_reward(self, action: TicketAction, raw_score: float) -> TicketReward:
         """Build a typed reward model with transparent shaping components."""
@@ -537,12 +539,12 @@ ESCALATION CRITERIA (requires_escalation=true):
         2. Tone matches customer sentiment (frustrated → empathetic)
         3. Actionable and professional
         
-        Scoring: Require 75% of keywords, with sentiment bonus.
+        Scoring: Require at least half of keywords (with minimum 3 when applicable), with sentiment bonus.
         
         Returns:
             1.0 if excellent
             0.6 if good
-            0.3 if partial
+            0.2 if partial
             0.0 if too few keywords
         """
         if not required_keywords:
@@ -564,16 +566,16 @@ ESCALATION CRITERIA (requires_escalation=true):
 
         found_count = sum(1 for kw in required_keywords if _kw_match(kw, response_lower))
         
-        # Require at least 3 out of N keywords, or 75% of them
-        threshold = max(self.RESPONSE_MIN_KEYWORDS_REQUIRED, int(len(required_keywords) * self.RESPONSE_KEYWORD_THRESHOLD))
+        # Require at least 3 out of N keywords, or half of them, whichever is larger.
+        threshold = max(self.RESPONSE_MIN_KEYWORDS_REQUIRED, (len(required_keywords) + 1) // 2)
         
         # Base score from keyword coverage
         if found_count >= len(required_keywords):
             base_score = 1.0
         elif found_count >= threshold:
             base_score = 0.6
-        elif found_count >= len(required_keywords) / 2:
-            base_score = 0.3
+        elif found_count >= 1:
+            base_score = 0.2
         else:
             logger.debug(f"Response insufficient keywords: {found_count}/{len(required_keywords)} (threshold={threshold})")
             return 0.0  # Too few keywords

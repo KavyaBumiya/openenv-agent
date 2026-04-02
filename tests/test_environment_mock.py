@@ -93,10 +93,10 @@ try:
         response=None,
         requires_escalation=False
     )
-    result = env.step(action)
-    assert result.done is True, "step() should return done=True for single-turn episodes"
-    assert result.reward is not None, "step() should return a reward"
-    print(f"OK - Step: reward={result.reward}, done={result.done}")
+    result_obs, reward, done, info = env.step(action)
+    assert done is True, "step() should return done=True for single-turn episodes"
+    assert reward is not None, "step() should return a reward"
+    print(f"OK - Step: reward={reward}, done={done}")
     
 except Exception as e:
     print(f"ERROR - {e}")
@@ -137,7 +137,7 @@ try:
     assert "def run_baseline" in source
     assert "extract_json" in source
     print(f"OK - Baseline module present ({len(source.splitlines())} lines)")
-    print("OK - Uses Groq baseline pipeline")
+    print("OK - Uses OpenAI-compatible baseline pipeline")
     
 except Exception as e:
     print(f"ERROR - {e}")
@@ -146,6 +146,6 @@ except Exception as e:
 print("\n" + "=" * 60)
 print("ALL CORE TESTS PASSED")
 print("=" * 60)
-print("\nTo run the full baseline with Groq:")
-print("1. Set GROQ_API_KEY in your environment")
-print("2. Run: python tests/test_groq_integration.py")
+print("\nTo run the full baseline:")
+print("1. Set HF_TOKEN in your environment")
+print("2. Run: python tests/test_live_integration.py")

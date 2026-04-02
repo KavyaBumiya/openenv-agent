@@ -8,7 +8,7 @@ Endpoints:
   GET  /tasks         Task definitions
   GET  /grader        Reward-function documentation
   POST /reset         Start episode, returns observation + session_id
-  POST /step          Submit action, returns observation + reward + done
+    POST /step          Submit action, returns observation + reward + done + info
   GET  /state         Read current episode state
   WS   /ws            WebSocket for real-time interaction
 """
@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnec
 from pydantic import BaseModel, Field
 
 from ..environment import CustomerSupportEnvironment
-from ..models import StepInfo, TicketAction, TicketObservation
+from ..models import TicketAction, TicketObservation
 
 logger = logging.getLogger(__name__)
 
@@ -157,9 +157,9 @@ async def get_grader():
                 "weights": {"category": 0.2, "priority": 0.15, "department": 0.2, "escalation": 0.15, "response": 0.3},
                 "notes": {
                     "response": (
-                        "Keyword coverage (≥75% or ≥3 required). "
+                        "Keyword coverage (at least half, with minimum 3 when applicable). "
                         "+0.1 empathy bonus for frustrated customers. "
-                        "-0.2 if no actionable next-step phrases."
+                        "-0.1 if no actionable next-step phrases."
                     ),
                 },
             },
@@ -197,13 +197,12 @@ async def step(req: StepRequest):
             requires_escalation=req.requires_escalation,
             response=req.response,
         )
-        obs = env.step(action)
+        obs, reward, done, info = env.step(action)
         obs_dict = obs.model_dump()
-        reward = obs_dict.pop("reward", 0.0)
-        done   = obs_dict.pop("done",   True)
+        obs_dict.pop("reward", None)
+        obs_dict.pop("done", None)
         _sessions[req.session_id] = (env, obs)
         logger.debug("step session=%s reward=%.3f", req.session_id, reward)
-        info = StepInfo(**env.build_step_info()).model_dump()
         return {"observation": obs_dict, "reward": reward, "done": done, "info": info}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -256,11 +255,10 @@ async def websocket_endpoint(websocket: WebSocket):
                     requires_escalation=data.get("requires_escalation"),
                     response=data.get("response"),
                 )
-                obs      = ws_env.step(ticket_action)
+                obs, reward, done, info = ws_env.step(ticket_action)
                 obs_dict = obs.model_dump()
-                reward   = obs_dict.pop("reward", 0.0)
-                done     = obs_dict.pop("done", True)
-                info = StepInfo(**ws_env.build_step_info()).model_dump()
+                obs_dict.pop("reward", None)
+                obs_dict.pop("done", None)
                 await websocket.send_json({"observation": obs_dict, "reward": reward, "done": done, "info": info})
 
             else:

@@ -6,7 +6,7 @@ This script proves:
 3. The integration works end-to-end
 
 Reproducibility: seed selects ticket index via modulo mapping.
-Requires: OPENAI_API_KEY or HF_TOKEN in environment
+Requires: HF_TOKEN in environment
 """
 
 import json
@@ -132,10 +132,10 @@ def run_baseline(mode="official"):
 
     api_base_url = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
     model_name = os.getenv("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
-    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("HF_TOKEN")
+    api_key = os.getenv("HF_TOKEN")
 
     if not api_key:
-        print("Error: OPENAI_API_KEY or HF_TOKEN environment variable not set", file=sys.stderr)
+        print("Error: HF_TOKEN environment variable not set", file=sys.stderr)
         sys.exit(1)
 
     client = OpenAI(api_key=api_key, base_url=api_base_url)
@@ -194,7 +194,7 @@ def run_baseline(mode="official"):
                 
                 task_temperature = temp_strategy[task]
 
-                # Call Groq
+                # Call the OpenAI-compatible client
                 response = client.chat.completions.create(
                     model=model_name,
                     messages=[
@@ -210,7 +210,7 @@ def run_baseline(mode="official"):
                 # Extract JSON from response
                 response_text = response.choices[0].message.content
                 if response_text is None:
-                    raise ValueError("Groq response content is None")
+                    raise ValueError("LLM response content is None")
                 
                 # Expected keys for this task
                 expected_keys_map = {
@@ -234,8 +234,7 @@ def run_baseline(mode="official"):
                 )
                 
                 # Grade action
-                step_obs = env.step(action)
-                score = step_obs.reward if step_obs.reward is not None else 0.0
+                step_obs, score, done, info = env.step(action)
                 scores.append(score)
                 
                 print(f"  Episode {episode}: score={score:.3f}")

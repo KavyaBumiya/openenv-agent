@@ -88,8 +88,8 @@ def run_quick_test():
         response=None,
         requires_escalation=False
     )
-    result = env.step(action)
-    print(f"   Score: {result.reward:.1%}")
+    result_obs, reward, done, info = env.step(action)
+    print(f"   Score: {reward:.1%}")
     
     print("\n2. Testing ROUTE task...")
     env = CustomerSupportEnvironment()
@@ -101,8 +101,8 @@ def run_quick_test():
         response=None,
         requires_escalation=False
     )
-    result = env.step(action)
-    print(f"   Score: {result.reward:.1%}")
+    result_obs, reward, done, info = env.step(action)
+    print(f"   Score: {reward:.1%}")
     
     print("\n3. Testing RESOLVE task...")
     env = CustomerSupportEnvironment()
@@ -114,8 +114,8 @@ def run_quick_test():
         response="Thank you for your feedback!",
         requires_escalation=False
     )
-    result = env.step(action)
-    print(f"   Score: {result.reward:.1%}")
+    result_obs, reward, done, info = env.step(action)
+    print(f"   Score: {reward:.1%}")
     
     print("\n✅ Environment is working correctly!")
 
@@ -190,9 +190,9 @@ def run_interactive_demo():
             )
         
         # Grade
-        result = env.step(action)
-        print(f"\n✔️  Score: {result.reward:.1%}")
-        print(f"📝 Feedback: {result.feedback}")
+        result_obs, reward, done, info = env.step(action)
+        print(f"\n✔️  Score: {reward:.1%}")
+        print(f"📝 Feedback: {result_obs.feedback}")
 
 
 def show_menu():
@@ -202,7 +202,7 @@ def show_menu():
     print("=" * 80)
     print("""
 Commands:
-    main.py baseline    - Run baseline evaluation with Groq (full dataset per task)
+    main.py baseline    - Run baseline evaluation with the OpenAI-compatible client (full dataset per task)
   main.py server      - Start FastAPI server (http://localhost:8000)
   main.py test        - Run quick environment test
   main.py demo        - Interactive demo mode
@@ -216,13 +216,13 @@ Examples:
 Documentation:
   README.md              - Quick start guide
   README_PRODUCTION.md   - Full specification
-  TRAINING_GUIDE.md      - Groq prompting guide
+    TRAINING_GUIDE.md      - Prompting guide
   DEPLOYMENT.md          - HuggingFace Spaces deployment
   ENVIRONMENT_SETUP.md   - Environment configuration
 
 Tests:
     tests/test_environment_mock.py - Contract and API smoke checks
-    tests/test_groq_integration.py - End-to-end provider integration
+    tests/test_live_integration.py - End-to-end LLM integration
 
 Evaluations:
     evals/test_improved_training.py    - Prompting quality evaluation
