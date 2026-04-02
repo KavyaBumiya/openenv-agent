@@ -33,12 +33,16 @@ jobs:
         run: |
           git config --global user.email "github-actions@github.com"
           git config --global user.name "github-actions"
+          git config --global credential.helper store
+          
+          # Store credentials for git
+          echo "https://token:${{ secrets.HF_TOKEN }}@huggingface.co" > ~/.git-credentials
           
           # Remove existing remote
           git remote remove hf || true
           
-          # Add HF Spaces remote with simple token authentication
-          git remote add hf https://token:${{ secrets.HF_TOKEN }}@huggingface.co/${{ env.REPO_ID }}
+          # Add HF Spaces remote (without credentials in URL)
+          git remote add hf https://huggingface.co/${{ env.REPO_ID }}
           
           # Force push to HF Spaces
           git push --force hf main
