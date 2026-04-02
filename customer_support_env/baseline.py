@@ -1,4 +1,4 @@
-"""Baseline evaluation: Groq (llama-3.3-70b-versatile) across full dataset per task.
+"""Baseline evaluation: OpenAI-compatible client across full dataset per task.
 
 This script proves:
 1. The environment is usable by AI agents
@@ -6,7 +6,7 @@ This script proves:
 3. The integration works end-to-end
 
 Reproducibility: seed selects ticket index via modulo mapping.
-Requires: GROQ_API_KEY in environment
+Requires: OPENAI_API_KEY or HF_TOKEN in environment
 """
 
 import json
@@ -21,6 +21,8 @@ try:
     load_dotenv()  # Load from .env file in current directory
 except ImportError:
     pass  # dotenv not installed, skip
+
+from openai import OpenAI
 
 from customer_support_env.environment import CustomerSupportEnvironment
 from customer_support_env.models import TicketAction
@@ -128,18 +130,15 @@ def run_baseline(mode="official"):
     Training mode: task-specific temps (0.1/0.5/0.7 for difficulty-based exploration)
     """
 
-    try:
-        from groq import Groq
-    except ImportError:
-        print("Error: groq package not installed. Install with: pip install groq", file=sys.stderr)
+    api_base_url = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+    model_name = os.getenv("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
+    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("HF_TOKEN")
+
+    if not api_key:
+        print("Error: OPENAI_API_KEY or HF_TOKEN environment variable not set", file=sys.stderr)
         sys.exit(1)
-    
-    # Check API key
-    if not os.getenv("GROQ_API_KEY"):
-        print("Error: GROQ_API_KEY environment variable not set", file=sys.stderr)
-        sys.exit(1)
-    
-    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+    client = OpenAI(api_key=api_key, base_url=api_base_url)
     env = CustomerSupportEnvironment()
     
     # Set temperature strategy based on mode
@@ -163,8 +162,8 @@ def run_baseline(mode="official"):
         raise ValueError(f"Unknown mode: {mode}. Use 'official' or 'training'")
     
     results = {
-        "model": "llama-3.3-70b-versatile",
-        "provider": "groq",
+        "model": model_name,
+        "provider": "openai-compatible",
         "mode": mode,
         "temperature_strategy": temp_strategy,
         "episodes_per_task": len(TICKETS),
@@ -197,7 +196,7 @@ def run_baseline(mode="official"):
 
                 # Call Groq
                 response = client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
+                    model=model_name,
                     messages=[
                         {
                             "role": "user",

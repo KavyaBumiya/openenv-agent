@@ -130,7 +130,7 @@ uvicorn customer_support_env.server.app:app --port 7860
 # Run the baseline agent (in another terminal)
 export API_BASE_URL="https://router.huggingface.co/v1"
 export MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
-export HF_TOKEN="hf_your_token_here"
+export OPENAI_API_KEY="your_api_key_here"
 python inference.py
 ```
 
@@ -141,7 +141,7 @@ docker build -t customer-support-env .
 docker run \
   -e API_BASE_URL="https://router.huggingface.co/v1" \
   -e MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct" \
-  -e HF_TOKEN="hf_your_token_here" \
+  -e OPENAI_API_KEY="your_api_key_here" \
   -p 7860:7860 \
   customer-support-env
 ```
@@ -152,7 +152,8 @@ docker run \
 |----------|---------|-------------|
 | `API_BASE_URL` | `https://router.huggingface.co/v1` | OpenAI-compatible LLM endpoint |
 | `MODEL_NAME` | `meta-llama/Llama-3.1-8B-Instruct` | Model identifier |
-| `HF_TOKEN` | *(required)* | HuggingFace or provider API token |
+| `OPENAI_API_KEY` | *(recommended)* | OpenAI-compatible API token used by `inference.py` |
+| `HF_TOKEN` | *(optional compatibility)* | Alternate token name accepted by `inference.py` |
 | `ENV_BASE_URL` | `http://localhost:7860` | Deployed environment URL used by `inference.py` |
 | `LOCAL_IMAGE_NAME` | *(optional)* | Local image name for docker-image workflows |
 | `BASELINE_OUTPUT_PATH` | `baseline_scores.json` | File where baseline aggregate scores are written |

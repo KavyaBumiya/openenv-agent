@@ -19,6 +19,7 @@ Optional:
                                  (default: http://localhost:7860 — for local docker testing)
     BASELINE_OUTPUT_PATH   JSON path for deterministic score summary
                                                  (default: baseline_scores.json)
+    LOCAL_IMAGE_NAME   Preserved for compatibility with the submission harness
 
 Usage:
         export OPENAI_API_KEY="..."   # or HF_TOKEN
@@ -118,6 +119,18 @@ class EnvClient:
 
     def close(self) -> None:
         self.http.close()
+
+    def wait_until_ready(self, attempts: int = 10, delay_s: float = 1.5) -> None:
+        for _ in range(attempts):
+            try:
+                r = self.http.get(f"{self.base}/health")
+                r.raise_for_status()
+                return
+            except Exception:
+                import time
+
+                time.sleep(delay_s)
+        raise RuntimeError(f"Environment server not reachable at {self.base}")
 
 # ---------------------------------------------------------------------------
 # LLM prompts
@@ -244,6 +257,7 @@ def run_episode(task: str, seed: int) -> tuple[bool, float]:
     log_start(task=task, env=BENCHMARK, model=MODEL_NAME)
 
     try:
+        env.wait_until_ready()
         obs = env.reset(task=task, seed=seed)
 
         for step in range(1, MAX_STEPS + 1):
@@ -296,7 +310,7 @@ def run_episode(task: str, seed: int) -> tuple[bool, float]:
                 break
 
         score = sum(rewards)
-        success = score >= SUCCESS_THRESH and bool(final_obs)
+        success = steps > 0 and score >= SUCCESS_THRESH
 
     except Exception:
         # Keep stdout strict: no extra line types besides START/STEP/END.
