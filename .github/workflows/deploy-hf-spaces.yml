@@ -35,8 +35,8 @@ jobs:
           # Remove existing remote
           git remote remove hf || true
           
-          # Add HF Spaces remote
-          git remote add hf https://huggingface.co/${{ env.REPO_ID }}
+          # Add HF Spaces remote with token authentication
+          git remote add hf https://git:${{ secrets.HF_TOKEN }}@huggingface.co/${{ env.REPO_ID }}
           
           # Force push to HF Spaces
           git push --force hf main
@@ -45,7 +45,6 @@ jobs:
           GIT_AUTHOR_EMAIL: github-actions@github.com
           GIT_COMMITTER_NAME: github-actions
           GIT_COMMITTER_EMAIL: github-actions@github.com
-          HUGGINGFACE_HUB_TOKEN: ${{ secrets.HF_TOKEN }}
 
       - name: Wait for build
         run: |
