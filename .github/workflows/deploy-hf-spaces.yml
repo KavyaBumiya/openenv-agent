@@ -35,8 +35,8 @@ jobs:
           # Remove existing remote
           git remote remove hf || true
           
-          # Add HF Spaces remote with token authentication (oauth2 format)
-          git remote add hf https://oauth2:${{ secrets.HF_TOKEN }}@huggingface.co/${{ env.REPO_ID }}
+          # Add HF Spaces remote with simple token authentication
+          git remote add hf https://token:${{ secrets.HF_TOKEN }}@huggingface.co/${{ env.REPO_ID }}
           
           # Force push to HF Spaces
           git push --force hf main
