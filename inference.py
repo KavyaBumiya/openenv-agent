@@ -7,9 +7,12 @@ Calls the deployed environment via HTTP and queries the LLM using the
 OpenAI-compatible client (works with HuggingFace router, Groq, Ollama, etc.).
 
 Required environment variables:
-    API_BASE_URL   LLM endpoint  (default: https://router.huggingface.co/v1)
-    MODEL_NAME     Model name    (default: meta-llama/Llama-3.1-8B-Instruct)
-    HF_TOKEN       API token (required)
+    API_BASE_URL      LLM endpoint  (default: https://router.huggingface.co/v1)
+    MODEL_NAME        Model name    (default: meta-llama/Llama-3.1-8B-Instruct)
+    OPENAI_API_KEY    API token (recommended by OpenEnv guidelines)
+
+Compatibility:
+    HF_TOKEN is also accepted for Hugging Face router workflows.
 
 Optional:
     ENV_BASE_URL   Deployed environment URL
@@ -18,7 +21,7 @@ Optional:
                                                  (default: baseline_scores.json)
 
 Usage:
-    export HF_TOKEN="hf_..."   # or OPENAI_API_KEY
+        export OPENAI_API_KEY="..."   # or HF_TOKEN
   python inference.py
 """
 
@@ -36,7 +39,9 @@ from openai import OpenAI
 # ---------------------------------------------------------------------------
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME   = os.getenv("MODEL_NAME",   "meta-llama/Llama-3.1-8B-Instruct")
-HF_TOKEN     = os.getenv("HF_TOKEN", "")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+HF_TOKEN       = os.getenv("HF_TOKEN", "")
+API_KEY        = OPENAI_API_KEY or HF_TOKEN
 ENV_BASE_URL = os.getenv("ENV_BASE_URL", "http://localhost:7860")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME", "")
 BASELINE_OUTPUT_PATH = os.getenv("BASELINE_OUTPUT_PATH", "baseline_scores.json")
@@ -53,13 +58,13 @@ SUCCESS_THRESH  = 0.1      # episode counted as success if score >= this
 # ---------------------------------------------------------------------------
 # Validate credentials early
 # ---------------------------------------------------------------------------
-if not HF_TOKEN:
-    raise RuntimeError("Missing API key. Set HF_TOKEN.")
+if not API_KEY:
+    raise RuntimeError("Missing API key. Set OPENAI_API_KEY (preferred) or HF_TOKEN.")
 
 # ---------------------------------------------------------------------------
 # LLM client
 # ---------------------------------------------------------------------------
-llm_client = OpenAI(api_key=HF_TOKEN, base_url=API_BASE_URL)
+llm_client = OpenAI(api_key=API_KEY, base_url=API_BASE_URL)
 
 # ---------------------------------------------------------------------------
 # Structured logging helpers  (spec-required format)
