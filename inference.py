@@ -7,13 +7,15 @@ Calls the deployed environment via HTTP and queries the LLM using the
 OpenAI-compatible client (works with HuggingFace router, Groq, Ollama, etc.).
 
 Required environment variables:
-  API_BASE_URL   LLM endpoint  (default: https://router.huggingface.co/v1)
-  MODEL_NAME     Model name    (default: meta-llama/Llama-3.1-8B-Instruct)
-    HF_TOKEN / OPENAI_API_KEY  API token (required)
+    API_BASE_URL   LLM endpoint  (default: https://router.huggingface.co/v1)
+    MODEL_NAME     Model name    (default: meta-llama/Llama-3.1-8B-Instruct)
+    HF_TOKEN       API token (required)
 
 Optional:
-  ENV_BASE_URL   Deployed environment URL
-                 (default: http://localhost:7860 — for local docker testing)
+    ENV_BASE_URL   Deployed environment URL
+                                 (default: http://localhost:7860 — for local docker testing)
+    BASELINE_OUTPUT_PATH   JSON path for deterministic score summary
+                                                 (default: baseline_scores.json)
 
 Usage:
     export HF_TOKEN="hf_..."   # or OPENAI_API_KEY
@@ -34,9 +36,10 @@ from openai import OpenAI
 # ---------------------------------------------------------------------------
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME   = os.getenv("MODEL_NAME",   "meta-llama/Llama-3.1-8B-Instruct")
-HF_TOKEN     = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY", "")
+HF_TOKEN     = os.getenv("HF_TOKEN", "")
 ENV_BASE_URL = os.getenv("ENV_BASE_URL", "http://localhost:7860")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME", "")
+BASELINE_OUTPUT_PATH = os.getenv("BASELINE_OUTPUT_PATH", "baseline_scores.json")
 
 BENCHMARK       = "customer_support_env"
 TASKS           = ["classify", "route", "resolve"]
@@ -51,7 +54,7 @@ SUCCESS_THRESH  = 0.1      # episode counted as success if score >= this
 # Validate credentials early
 # ---------------------------------------------------------------------------
 if not HF_TOKEN:
-    raise RuntimeError("Missing API key. Set HF_TOKEN or OPENAI_API_KEY.")
+    raise RuntimeError("Missing API key. Set HF_TOKEN.")
 
 # ---------------------------------------------------------------------------
 # LLM client
@@ -202,7 +205,7 @@ def extract_json(text: str, required_keys: List[str]) -> Optional[dict]:
     return None
 
 
-def call_llm(task: str, obs: dict) -> Optional[dict]:
+def call_llm(task: str, obs: dict, episode_seed: int, step: int) -> Optional[dict]:
     """Query the LLM and return a parsed action dict, or None on failure."""
     try:
         resp = llm_client.chat.completions.create(
@@ -212,6 +215,8 @@ def call_llm(task: str, obs: dict) -> Optional[dict]:
                 {"role": "user",   "content": build_user_prompt(obs)},
             ],
             temperature=TEMPERATURE,
+            top_p=1.0,
+            seed=(episode_seed * 100) + step,
             max_tokens=MAX_TOKENS,
         )
         raw = (resp.choices[0].message.content or "").strip()
@@ -224,7 +229,8 @@ def call_llm(task: str, obs: dict) -> Optional[dict]:
 # Episode runner
 # ---------------------------------------------------------------------------
 
-def run_episode(env: EnvClient, task: str, seed: int) -> tuple[bool, float]:
+def run_episode(task: str, seed: int) -> tuple[bool, float]:
+    env = EnvClient(ENV_BASE_URL)
     rewards: List[float] = []
     steps = 0
     success = False
@@ -236,7 +242,7 @@ def run_episode(env: EnvClient, task: str, seed: int) -> tuple[bool, float]:
         obs = env.reset(task=task, seed=seed)
 
         for step in range(1, MAX_STEPS + 1):
-            action_dict = call_llm(task, obs)
+            action_dict = call_llm(task, obs, episode_seed=seed, step=step)
             error_msg = None
 
             if action_dict is None:
@@ -261,6 +267,7 @@ def run_episode(env: EnvClient, task: str, seed: int) -> tuple[bool, float]:
             reward = float(result.get("reward", 0.0))
             done = bool(result.get("done", True))
             final_obs = result.get("observation", {}) or {}
+            last_action_error = final_obs.get("last_action_error") if isinstance(final_obs, dict) else None
 
             rewards.append(reward)
             steps = step
@@ -271,7 +278,13 @@ def run_episode(env: EnvClient, task: str, seed: int) -> tuple[bool, float]:
                 + (f" esc={str(payload['requires_escalation']).lower()}" if payload.get("requires_escalation") is not None else "")
                 + (f" resp=<{len(payload['response'])}chars>" if payload.get("response") else "")
             )
-            log_step(step=step, action=action_str, reward=reward, done=done, error=error_msg)
+            log_step(
+                step=step,
+                action=action_str,
+                reward=reward,
+                done=done,
+                error=last_action_error if last_action_error is not None else error_msg,
+            )
 
             obs = final_obs
             if done:
@@ -280,14 +293,16 @@ def run_episode(env: EnvClient, task: str, seed: int) -> tuple[bool, float]:
         score = sum(rewards)
         success = score >= SUCCESS_THRESH and bool(final_obs)
 
-    except Exception as exc:
-        log_step(step=steps + 1, action="<error>", reward=0.0, done=True, error=str(exc))
-        rewards = rewards or [0.0]
+    except Exception:
+        # Keep stdout strict: no extra line types besides START/STEP/END.
+        success = False
+    finally:
+        env.close()
+        final_rewards = rewards or [0.0]
+        final_steps = steps or 0
+        log_end(success=success, steps=final_steps, rewards=final_rewards)
 
-    final_rewards = rewards or [0.0]
-    final_steps = steps or 1
-    log_end(success=success, steps=final_steps, rewards=final_rewards)
-    return success, sum(final_rewards)
+    return success, sum(rewards or [0.0])
 
 
 # ---------------------------------------------------------------------------
@@ -295,27 +310,46 @@ def run_episode(env: EnvClient, task: str, seed: int) -> tuple[bool, float]:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    env = EnvClient(ENV_BASE_URL)
     results: dict[str, list[float]] = {task: [] for task in TASKS}
-    try:
-        for task in TASKS:
-            for seed in SEEDS:
-                _, total_reward = run_episode(env, task, seed)
-                results[task].append(total_reward)
-    finally:
-        env.close()
+    for task in TASKS:
+        for seed in SEEDS:
+            _, total_reward = run_episode(task, seed)
+            results[task].append(total_reward)
+
+    summary = {
+        "benchmark": BENCHMARK,
+        "model_name": MODEL_NAME,
+        "api_base_url": API_BASE_URL,
+        "episodes_per_task": len(SEEDS),
+        "task_scores": {},
+    }
 
     # Keep strict stdout reserved for [START]/[STEP]/[END] lines only.
     # Baseline aggregates are written to stderr for operator visibility.
     for task in TASKS:
         task_scores = results[task]
         mean_score = (sum(task_scores) / len(task_scores)) if task_scores else 0.0
+        summary["task_scores"][task] = {
+            "mean_total_reward": round(mean_score, 4),
+            "episode_rewards": [round(v, 4) for v in task_scores],
+        }
         print(
             f"task={task} episodes={len(task_scores)} mean_total_reward={mean_score:.3f} "
             f"model={MODEL_NAME} api_base={API_BASE_URL} local_image={LOCAL_IMAGE_NAME or 'none'}",
             file=os.sys.stderr,
             flush=True,
         )
+
+    overall_scores = [score for task_scores in results.values() for score in task_scores]
+    summary["overall_mean_total_reward"] = round(
+        (sum(overall_scores) / len(overall_scores)) if overall_scores else 0.0,
+        4,
+    )
+
+    with open(BASELINE_OUTPUT_PATH, "w", encoding="utf-8") as fp:
+        json.dump(summary, fp, indent=2)
+
+    print(f"wrote_baseline_summary={BASELINE_OUTPUT_PATH}", file=os.sys.stderr, flush=True)
 
 
 if __name__ == "__main__":

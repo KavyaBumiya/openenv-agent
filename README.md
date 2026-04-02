@@ -2,7 +2,7 @@
 title: Customer Support RL Environment
 emoji: 🎫
 colorFrom: blue
-colorTo: purple
+colorTo: cyan
 sdk: docker
 app_port: 7860
 pinned: false
@@ -120,8 +120,8 @@ Grader weights: `category=0.2, priority=0.15, department=0.2, escalation=0.15, r
 ### Local (Python)
 
 ```bash
-git clone https://github.com/your-username/customer-support-env
-cd customer-support-env
+git clone https://github.com/KavyaBumiya/openenv-agent.git
+cd openenv-agent
 pip install -r requirements.txt
 
 # Start the environment server
@@ -153,9 +153,9 @@ docker run \
 | `API_BASE_URL` | `https://router.huggingface.co/v1` | OpenAI-compatible LLM endpoint |
 | `MODEL_NAME` | `meta-llama/Llama-3.1-8B-Instruct` | Model identifier |
 | `HF_TOKEN` | *(required)* | HuggingFace or provider API token |
-| `OPENAI_API_KEY` | *(optional)* | Alternative key name recognized by `inference.py` |
 | `ENV_BASE_URL` | `http://localhost:7860` | Deployed environment URL used by `inference.py` |
 | `LOCAL_IMAGE_NAME` | *(optional)* | Local image name for docker-image workflows |
+| `BASELINE_OUTPUT_PATH` | `baseline_scores.json` | File where baseline aggregate scores are written |
 
 ---
 
@@ -225,6 +225,7 @@ The baseline script emits strict structured stdout lines required by evaluators:
 ```
 
 No additional line types are printed to stdout.
+Aggregate metrics are written to stderr and saved to `baseline_scores.json`.
 
 ## Hugging Face Space Deployment
 
