@@ -8,6 +8,7 @@ on:
 env:
   REPO_TYPE: space
   REPO_ID: ${{ github.repository_owner }}/customer-support-env
+  SPACE_NAME: customer-support-env
 
 jobs:
   deploy:
@@ -33,18 +34,19 @@ jobs:
         run: |
           git config --global user.email "github-actions@github.com"
           git config --global user.name "github-actions"
+          SPACE_GIT_URL="https://huggingface.co/spaces/${{ env.REPO_ID }}"
           
           # Remove existing remote
           git remote remove hf || true
           
-          # Add HF Spaces remote with token in URL (using token as password directly)
-          git remote add hf https://${{ secrets.HF_TOKEN }}@huggingface.co/${{ env.REPO_ID }}
+          # Add HF Spaces remote (must include /spaces/ path)
+          git remote add hf "https://user:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/${{ env.REPO_ID }}"
           
           # Force push to HF Spaces
           git push --force hf main 2>&1 || {
             echo "Initial push failed, retrying with different auth..."
             git remote remove hf
-            GIT_ASKPASS_OVERRIDE=true git remote add hf https://huggingface.co/${{ env.REPO_ID }}
+            git remote add hf "$SPACE_GIT_URL"
             git push --force hf main
           }
         env:
@@ -87,28 +89,31 @@ jobs:
 
       - name: Health check
         run: |
-          SPACE_URL="https://${{ github.repository_owner }}-customer-support-env.hf.space"
-          MAX_ATTEMPTS=6
+          OWNER_LC="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          SPACE_URL="https://${OWNER_LC}-${{ env.SPACE_NAME }}.hf.space"
+          MAX_ATTEMPTS=30
           ATTEMPT=0
           
           echo "🔍 Checking Space availability..."
           echo "URL: $SPACE_URL"
           
           while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SPACE_URL" || echo "000")
-            
-            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "301" ]; then
-              echo "✓ Space is online (HTTP $HTTP_CODE)"
+            HEALTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$SPACE_URL/health" || echo "000")
+            RESET_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$SPACE_URL/reset" -H "content-type: application/json" -d '{}' || echo "000")
+
+            if [ "$HEALTH_CODE" = "200" ] && [ "$RESET_CODE" = "200" ]; then
+              echo "✓ Space is online (/health=$HEALTH_CODE, /reset=$RESET_CODE)"
               exit 0
             fi
             
             ATTEMPT=$((ATTEMPT + 1))
-            echo "⏳ Attempt $ATTEMPT/$MAX_ATTEMPTS (HTTP $HTTP_CODE)"
-            sleep 10
+            echo "⏳ Attempt $ATTEMPT/$MAX_ATTEMPTS (/health=$HEALTH_CODE, /reset=$RESET_CODE)"
+            sleep 15
           done
           
-          echo "⚠️ Space may not be ready yet. Check HF dashboard for status."
-          exit 0  # Don't fail; HF Spaces may take longer to warm up
+          echo "❌ Space readiness check failed after $MAX_ATTEMPTS attempts"
+          echo "Expected /health=200 and /reset=200 at $SPACE_URL"
+          exit 1
 
   # Notify on deployment (optional)
   # Complete once SLACK_WEBHOOK_URL secret is added

@@ -1,0 +1,33 @@
+{
+  "benchmark": "customer_support_env",
+  "model_name": "meta-llama/Llama-3.1-8B-Instruct",
+  "api_base_url": "https://router.huggingface.co/v1",
+  "episodes_per_task": 3,
+  "task_scores": {
+    "classify": {
+      "mean_episode_score": 0.156,
+      "episode_rewards": [
+        0.068,
+        0.0,
+        0.4
+      ]
+    },
+    "route": {
+      "mean_episode_score": 0.281,
+      "episode_rewards": [
+        0.193,
+        0.0,
+        0.65
+      ]
+    },
+    "resolve": {
+      "mean_episode_score": 0.225,
+      "episode_rewards": [
+        0.175,
+        0.0,
+        0.5
+      ]
+    }
+  },
+  "overall_mean_episode_score": 0.2207
+}
