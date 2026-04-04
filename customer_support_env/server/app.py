@@ -19,7 +19,7 @@ import logging
 import uuid
 from typing import Dict, Literal, Optional, Tuple
 
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 
 from ..environment import CustomerSupportEnvironment
@@ -168,7 +168,7 @@ async def get_grader():
 
 
 @app.post("/reset")
-async def reset(req: ResetRequest):
+async def reset(req: ResetRequest = Body(default_factory=ResetRequest)):
     try:
         session_id = req.session_id or str(uuid.uuid4())
         env = CustomerSupportEnvironment()
