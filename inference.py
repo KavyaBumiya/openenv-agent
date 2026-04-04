@@ -49,7 +49,7 @@ SEEDS           = list(range(NUM_SEEDS))
 MAX_STEPS       = 5
 TEMPERATURE     = 0.0
 MAX_TOKENS      = 512
-SUCCESS_THRESH  = 0.1      # episode counted as success if score >= this
+SUCCESS_THRESH  = 0.5      # episode counted as success if normalized score >= this
 
 # ---------------------------------------------------------------------------
 # Validate credentials early
@@ -89,6 +89,13 @@ def _sanitize_single_line(value: Optional[str]) -> str:
     if value is None:
         return "null"
     return value.replace("\r", " ").replace("\n", " ").strip()
+
+
+def _episode_score(rewards: List[float]) -> float:
+    """Return a normalized per-episode score in [0, 1]."""
+    if not rewards:
+        return 0.0
+    return max(0.0, min(1.0, sum(rewards)))
 
 # ---------------------------------------------------------------------------
 # Environment HTTP client
@@ -271,7 +278,6 @@ def run_episode(task: str, seed: int) -> tuple[bool, float]:
     log_start(task=task, env=BENCHMARK, model=MODEL_NAME)
 
     try:
-        env.wait_until_ready()
         obs = env.reset(task=task, seed=seed)
 
         for step in range(1, MAX_STEPS + 1):
@@ -331,7 +337,7 @@ def run_episode(task: str, seed: int) -> tuple[bool, float]:
             if done:
                 break
 
-        score = sum(rewards)
+        score = _episode_score(rewards)
         success = steps > 0 and score >= SUCCESS_THRESH
 
     except Exception:
@@ -346,7 +352,7 @@ def run_episode(task: str, seed: int) -> tuple[bool, float]:
         final_steps = steps or 0
         log_end(success=success, steps=final_steps, rewards=final_rewards)
 
-    return success, sum(rewards or [0.0])
+    return success, _episode_score(rewards)
 
 
 # ---------------------------------------------------------------------------
@@ -354,6 +360,13 @@ def run_episode(task: str, seed: int) -> tuple[bool, float]:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    # Probe /health once up front rather than for every episode.
+    probe_env = EnvClient(ENV_BASE_URL)
+    try:
+        probe_env.wait_until_ready()
+    finally:
+        probe_env.close()
+
     results: dict[str, list[float]] = {task: [] for task in TASKS}
     for task in TASKS:
         for seed in SEEDS:
@@ -374,18 +387,18 @@ def main() -> None:
         task_scores = results[task]
         mean_score = (sum(task_scores) / len(task_scores)) if task_scores else 0.0
         summary["task_scores"][task] = {
-            "mean_total_reward": round(mean_score, 4),
+            "mean_episode_score": round(mean_score, 4),
             "episode_rewards": [round(v, 4) for v in task_scores],
         }
         print(
-            f"task={task} episodes={len(task_scores)} mean_total_reward={mean_score:.3f} "
+            f"task={task} episodes={len(task_scores)} mean_episode_score={mean_score:.3f} "
             f"model={MODEL_NAME} api_base={API_BASE_URL} local_image={LOCAL_IMAGE_NAME or 'none'}",
             file=os.sys.stderr,
             flush=True,
         )
 
     overall_scores = [score for task_scores in results.values() for score in task_scores]
-    summary["overall_mean_total_reward"] = round(
+    summary["overall_mean_episode_score"] = round(
         (sum(overall_scores) / len(overall_scores)) if overall_scores else 0.0,
         4,
     )

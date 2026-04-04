@@ -157,10 +157,11 @@ ESCALATION CRITERIA (requires_escalation=true):
         # Validate reward weights sum to 1.0 for each task
         for task, weights in self.REWARD_WEIGHTS.items():
             total_weight = sum(weights.values())
-            assert abs(total_weight - 1.0) < 1e-9, (
-                f"REWARD_WEIGHTS['{task}'] sum to {total_weight}, not 1.0. "
-                f"Weights: {weights}"
-            )
+            if abs(total_weight - 1.0) >= 1e-9:
+                raise ValueError(
+                    f"REWARD_WEIGHTS['{task}'] sum to {total_weight}, not 1.0. "
+                    f"Weights: {weights}"
+                )
         
         self._state: TicketState = TicketState()
         self._ticket: Dict[str, Any] | None = None
@@ -567,7 +568,10 @@ ESCALATION CRITERIA (requires_escalation=true):
         found_count = sum(1 for kw in required_keywords if _kw_match(kw, response_lower))
         
         # Require at least 3 out of N keywords, or half of them, whichever is larger.
-        threshold = max(self.RESPONSE_MIN_KEYWORDS_REQUIRED, (len(required_keywords) + 1) // 2)
+        threshold = min(
+            len(required_keywords),
+            max(self.RESPONSE_MIN_KEYWORDS_REQUIRED, (len(required_keywords) + 1) // 2),
+        )
         
         # Base score from keyword coverage
         if found_count >= len(required_keywords):
