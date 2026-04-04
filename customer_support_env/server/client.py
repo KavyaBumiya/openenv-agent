@@ -50,6 +50,16 @@ class CustomerSupportClient(EnvClient[TicketAction, TicketObservation, TicketSta
             await self.websocket.close()
             self.websocket = None
     
+    async def __aenter__(self):
+        """Async context manager entry."""
+        await self.connect()
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit — ensures connection cleanup."""
+        await self.disconnect()
+        return False
+    
     async def reset(self, task: str = "classify", seed: Optional[int] = None) -> TicketObservation:
         """Send reset command to server.
         
@@ -108,6 +118,16 @@ class CustomerSupportClient(EnvClient[TicketAction, TicketObservation, TicketSta
         data = json.loads(response)
         
         return self._parse_result(data)
+
+    async def state(self) -> TicketState:
+        """Request the current state snapshot from the server."""
+        if not self.websocket:
+            raise RuntimeError("Not connected. Call connect() first.")
+
+        await self.websocket.send(json.dumps({"action": "state"}))
+        response = await self.websocket.recv()
+        data = json.loads(response)
+        return self._parse_state(data)
     
     def _parse_observation(self, payload: dict) -> TicketObservation:
         """Convert JSON payload to TicketObservation."""
@@ -171,6 +191,7 @@ class CustomerSupportClient(EnvClient[TicketAction, TicketObservation, TicketSta
             observation=observation,
             reward=payload.get("reward", 0.0),
             done=payload.get("done", False),
+            info=payload.get("info", {}),
         )
     
     def _parse_state(self, payload: dict) -> TicketState:

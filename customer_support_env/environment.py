@@ -15,6 +15,51 @@ from .data import TICKETS
 logger = logging.getLogger(__name__)
 
 
+def _term_variants(term: str) -> set[str]:
+    """Generate normalized variants of a term for keyword matching.
+    
+    Handles English inflections including silent-e rule:
+    - resolve + ed → resolved (drop silent(e)
+    - route + ing → routing (drop silent-e)
+    - help + ed → helped (simple addition)
+    """
+    normalized = term.lower().strip()
+    variants = {normalized}
+    
+    # First pass: try stripping each suffix to find base forms
+    for suffix in ("ed", "ing", "s", "tion"):
+        if len(normalized) > len(suffix) + 2 and normalized.endswith(suffix):
+            base = normalized[: -len(suffix)]
+            variants.add(base)
+            # For the base form, also try adding other suffixes
+            for other_suffix in ("ed", "ing", "s"):
+                if other_suffix != suffix and len(base + other_suffix) < 30:
+                    variants.add(base + other_suffix)
+    
+    # Second pass: for the original word, if it's already a base form (no suffix),
+    # also add common inflections (handling silent-e rule)
+    is_base = not any(
+        normalized.endswith(suf) and len(normalized) > len(suf) + 2
+        for suf in ("ed", "ing", "s", "tion")
+    )
+    
+    if is_base:
+        # For "ing": drop trailing 'e' before adding 'ing'
+        if normalized.endswith("e") and len(normalized) > 3:
+            variants.add(normalized[:-1] + "ing")  # resolve → resolving
+        variants.add(normalized + "ing")  # help → helping
+        
+        # For "ed": drop trailing 'e' before adding 'ed'
+        if normalized.endswith("e") and len(normalized) > 3:
+            variants.add(normalized[:-1] + "ed")  # resolve → resolved
+        variants.add(normalized + "ed")  # help → helped
+        
+        # For "s": just add it (usually works)
+        variants.add(normalized + "s")  # help → helps
+    
+    return {v for v in variants if v and len(v) > 2}
+
+
 class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, TicketState]):
     """Customer support ticket environment with trajectory-shaped rewards.
 
@@ -257,15 +302,8 @@ ESCALATION CRITERIA (requires_escalation=true):
             reward_model = self.build_reward(action, raw_score)
             feedback = self._build_feedback(action, raw_score)
         except Exception as e:
-            raw_score = 0.0
-            reward_model = TicketReward(
-                value=0.0,
-                raw_score=0.0,
-                progress_gain=0.0,
-                repeated_action_penalty=0.0,
-                extra_step_penalty=0.0,
-            )
-            feedback = f"Could not grade action: {str(e)}"
+            logger.exception("Unexpected grading failure for task %s", self._task)
+            raise
 
         reward = reward_model.value
         self._state.cumulative_reward = round(self._state.cumulative_reward + reward, 3)
@@ -430,9 +468,16 @@ ESCALATION CRITERIA (requires_escalation=true):
             )
             
             # HARD task penalty: missing/inadequate response significantly hurts overall score
-            # If response is missing or too short, apply multiplier penalty
+            # Apply the penalty to the response component only.
             if not response or len(response) < self.RESPONSE_MIN_LENGTH:
-                final_score *= self.RESPONSE_LENGTH_PENALTY  # Penalty for incomplete resolve attempts
+                response_component = resp_score * weights["response"] * self.RESPONSE_LENGTH_PENALTY
+                final_score = (
+                    cat_score * weights["category"]
+                    + pri_score * weights["priority"]
+                    + dept_score * weights["department"]
+                    + escalation_score * weights["escalation"]
+                    + response_component
+                )
                 logger.debug(f"Response penalty applied: too short ({len(response)} chars, min {self.RESPONSE_MIN_LENGTH})")
         
         final_score = round(final_score, 3)
@@ -552,20 +597,16 @@ ESCALATION CRITERIA (requires_escalation=true):
             return 1.0  # No keywords required, return full credit
         
         response_lower = response_text.lower()
+        response_terms = {
+            variant
+            for token in re.findall(r"\b\w+\b", response_lower)
+            for variant in _term_variants(token)
+        }
 
-        def _kw_match(kw: str, text: str) -> bool:
-            # Light stemming for common suffixes to reduce morphology brittleness.
-            variants = {kw.lower()}
-            for suffix in ("ed", "ing", "s", "tion"):
-                if kw.lower().endswith(suffix) and len(kw) > len(suffix) + 2:
-                    variants.add(kw.lower()[: -len(suffix)])
-            # Use word boundaries to avoid substring matching (e.g., "solve" ≠ "resolve")
-            for v in variants:
-                if v and re.search(rf'\b{re.escape(v)}\b', text):
-                    return True
-            return False
+        def _kw_match(kw: str) -> bool:
+            return bool(_term_variants(kw) & response_terms)
 
-        found_count = sum(1 for kw in required_keywords if _kw_match(kw, response_lower))
+        found_count = sum(1 for kw in required_keywords if _kw_match(kw))
         
         # Require at least 3 out of N keywords, or half of them, whichever is larger.
         threshold = min(
@@ -681,15 +722,13 @@ ESCALATION CRITERIA (requires_escalation=true):
                 feedback_parts.append(f"✗ Response required for HARD task (PENALTY: -50% for incomplete resolve)")
             else:
                 response_lower = response_text.lower()
-                # Use same word-boundary matching as _score_response for consistency
-                found = []
-                for kw in gt_keywords:
-                    variants = {kw.lower()}
-                    for suffix in ("ed", "ing", "s", "tion"):
-                        if kw.lower().endswith(suffix) and len(kw) > len(suffix) + 2:
-                            variants.add(kw.lower()[: -len(suffix)])
-                    if any(v and re.search(rf'\b{re.escape(v)}\b', response_lower) for v in variants):
-                        found.append(kw)
+                response_terms = {
+                    variant
+                    for token in re.findall(r"\b\w+\b", response_lower)
+                    for variant in _term_variants(token)
+                }
+
+                found = [kw for kw in gt_keywords if _term_variants(kw) & response_terms]
                 
                 missing = [kw for kw in gt_keywords if kw not in found]
                 feedback_parts.append(

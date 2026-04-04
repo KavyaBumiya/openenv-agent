@@ -217,10 +217,7 @@ async def get_state(session_id: str = Query(...)):
         raise HTTPException(status_code=404, detail=f"Session not found: {session_id}")
     try:
         env, _ = _sessions[session_id]
-        state  = env.state().model_dump()
-        if env._ticket:
-            state["current_ticket_id"] = env._ticket["id"]
-        return state
+        return env.state().model_dump()
     except Exception as exc:
         logger.exception("state failed")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -260,6 +257,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 obs_dict.pop("reward", None)
                 obs_dict.pop("done", None)
                 await websocket.send_json({"observation": obs_dict, "reward": reward, "done": done, "info": info})
+
+            elif action_type == "state":
+                await websocket.send_json(ws_env.state().model_dump())
 
             else:
                 await websocket.send_json({"error": f"Unknown action: {action_type}"})

@@ -35,10 +35,11 @@ class State(BaseModel):
 class StepResult:
     """Result of stepping through the environment."""
     
-    def __init__(self, observation, reward: float, done: bool):
+    def __init__(self, observation, reward: float, done: bool, info: dict | None = None):
         self.observation = observation
         self.reward = reward
         self.done = done
+        self.info = info or {}
 
 
 class Environment(Generic[ActionType, ObservationType, StateType]):

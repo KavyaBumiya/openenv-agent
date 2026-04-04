@@ -9,7 +9,7 @@ OpenAI-compatible client.
 Required environment variables:
     API_BASE_URL      LLM endpoint  (default: https://router.huggingface.co/v1)
     MODEL_NAME        Model name    (default: meta-llama/Llama-3.1-8B-Instruct)
-    HF_TOKEN          API token     (required)
+    HF_TOKEN          API token
 
 Optional:
     ENV_BASE_URL   Deployed environment URL
@@ -55,7 +55,7 @@ SUCCESS_THRESH  = 0.5      # episode counted as success if normalized score >= t
 # Validate credentials early
 # ---------------------------------------------------------------------------
 if not HF_TOKEN:
-    raise RuntimeError("Missing required HF_TOKEN environment variable.")
+    raise RuntimeError("Missing API token. Set HF_TOKEN.")
 
 # ---------------------------------------------------------------------------
 # LLM client
@@ -317,8 +317,8 @@ def run_episode(task: str, seed: int) -> tuple[bool, float]:
                     step_error = str(last_action_error)
             except Exception as exc:
                 reward = 0.0
-                done = False
-                final_obs = {}
+                done = True
+                final_obs = obs or {}
                 step_error = str(exc)
 
             rewards.append(reward)
@@ -350,7 +350,11 @@ def run_episode(task: str, seed: int) -> tuple[bool, float]:
             print(f"[WARN] env.close failed: {_sanitize_single_line(str(exc))}", file=os.sys.stderr, flush=True)
         final_rewards = rewards or [0.0]
         final_steps = steps or 0
-        log_end(success=success, steps=final_steps, rewards=final_rewards)
+        log_end(
+            success=success,
+            steps=final_steps,
+            rewards=final_rewards,
+        )
 
     return success, _episode_score(rewards)
 
