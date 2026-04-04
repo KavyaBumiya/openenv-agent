@@ -21,6 +21,7 @@ wheels/
 *.egg
 
 # Virtual environments
+.venv/
 venv/
 ENV/
 env/
@@ -44,3 +45,16 @@ htmlcov/
 
 # OpenAI
 .openai/
+
+# Generated repo artifacts
+/docker_build.txt
+/docker_info*.txt
+/hf_*.txt
+/inference_*.txt
+/inference_*.log
+/openenv_validate_now.txt
+/py_reset_check.txt
+/py_*_reset*.txt
+/space_*.txt
+/validate_*.log
+/wsl_status.txt
