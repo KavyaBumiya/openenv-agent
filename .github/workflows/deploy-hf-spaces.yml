@@ -36,41 +36,29 @@ jobs:
 
       - name: Push to Hugging Face Spaces
         run: |
-          git config --global user.email "github-actions@github.com"
-          git config --global user.name "github-actions"
+          python -m pip install --upgrade pip
+          python -m pip install "huggingface_hub>=0.32.0"
 
-          # Remove existing remote.
-          git remote remove hf || true
+          # Preflight: validate token and print account identity for easier debugging.
+          python - <<'PY'
+          import os
+          from huggingface_hub import whoami
 
-          # Try multiple auth URL formats because HF git auth behavior can vary
-          # across token/user configurations.
-          SPACE_OWNER="${{ env.REPO_ID }}"
-          SPACE_OWNER="${SPACE_OWNER%%/*}"
-          CANDIDATES=(
-            "https://oauth2:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/${{ env.REPO_ID }}"
-            "https://${SPACE_OWNER}:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/${{ env.REPO_ID }}"
-            "https://__token__:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/${{ env.REPO_ID }}"
-          )
+          token = os.environ["HF_TOKEN"]
+          info = whoami(token=token)
+          print(f"HF auth OK as: {info.get('name')}")
+          PY
 
-          PUSHED=0
-          for url in "${CANDIDATES[@]}"; do
-            git remote remove hf || true
-            git remote add hf "$url"
-            if git ls-remote hf >/dev/null 2>&1; then
-              echo "✓ HF remote auth preflight succeeded"
-              if git push --force hf HEAD:main; then
-                PUSHED=1
-                break
-              fi
-            fi
-          done
-
-          if [ "$PUSHED" -ne 1 ]; then
-            echo "❌ Unable to push to Hugging Face Space '${{ env.REPO_ID }}'"
-            echo "Check HF_TOKEN write permission and space ownership."
-            exit 1
-          fi
+          # Upload current repo contents to the target Space.
+          # This avoids git credential URL edge-cases in CI.
+          huggingface-cli upload \
+            "${{ env.REPO_ID }}" \
+            . \
+            --repo-type "${{ env.REPO_TYPE }}" \
+            --token "${{ secrets.HF_TOKEN }}" \
+            --commit-message "Deploy from GitHub Actions ${GITHUB_SHA}"
         env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           GIT_AUTHOR_NAME: github-actions
           GIT_AUTHOR_EMAIL: github-actions@github.com
           GIT_COMMITTER_NAME: github-actions
