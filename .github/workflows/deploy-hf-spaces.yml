@@ -38,16 +38,38 @@ jobs:
         run: |
           git config --global user.email "github-actions@github.com"
           git config --global user.name "github-actions"
-          SPACE_GIT_URL="https://huggingface.co/spaces/${{ env.REPO_ID }}"
-          
-          # Remove existing remote
-          git remote remove hf || true
-          
-          # Use HF token auth format supported by Spaces git remotes.
-          git remote add hf "https://oauth2:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/${{ env.REPO_ID }}"
 
-          # Force push to HF Spaces.
-          git push --force hf HEAD:main
+          # Remove existing remote.
+          git remote remove hf || true
+
+          # Try multiple auth URL formats because HF git auth behavior can vary
+          # across token/user configurations.
+          SPACE_OWNER="${{ env.REPO_ID }}"
+          SPACE_OWNER="${SPACE_OWNER%%/*}"
+          CANDIDATES=(
+            "https://oauth2:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/${{ env.REPO_ID }}"
+            "https://${SPACE_OWNER}:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/${{ env.REPO_ID }}"
+            "https://__token__:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/${{ env.REPO_ID }}"
+          )
+
+          PUSHED=0
+          for url in "${CANDIDATES[@]}"; do
+            git remote remove hf || true
+            git remote add hf "$url"
+            if git ls-remote hf >/dev/null 2>&1; then
+              echo "✓ HF remote auth preflight succeeded"
+              if git push --force hf HEAD:main; then
+                PUSHED=1
+                break
+              fi
+            fi
+          done
+
+          if [ "$PUSHED" -ne 1 ]; then
+            echo "❌ Unable to push to Hugging Face Space '${{ env.REPO_ID }}'"
+            echo "Check HF_TOKEN write permission and space ownership."
+            exit 1
+          fi
         env:
           GIT_AUTHOR_NAME: github-actions
           GIT_AUTHOR_EMAIL: github-actions@github.com
