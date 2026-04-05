@@ -168,7 +168,7 @@ async def get_grader():
 
 
 @app.post("/reset")
-async def reset(req: Optional[ResetRequest] = None):
+async def reset(req: Optional[ResetRequest] = Body(None)):
     try:
         if req is None:
             req = ResetRequest()
