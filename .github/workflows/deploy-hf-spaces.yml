@@ -39,16 +39,11 @@ jobs:
           # Remove existing remote
           git remote remove hf || true
           
-          # Add HF Spaces remote (must include /spaces/ path)
-          git remote add hf "https://user:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/${{ env.REPO_ID }}"
-          
-          # Force push to HF Spaces
-          git push --force hf main 2>&1 || {
-            echo "Initial push failed, retrying with different auth..."
-            git remote remove hf
-            git remote add hf "$SPACE_GIT_URL"
-            git push --force hf main
-          }
+          # Use HF token auth format supported by Spaces git remotes.
+          git remote add hf "https://oauth2:${{ secrets.HF_TOKEN }}@huggingface.co/spaces/${{ env.REPO_ID }}"
+
+          # Force push to HF Spaces.
+          git push --force hf HEAD:main
         env:
           GIT_AUTHOR_NAME: github-actions
           GIT_AUTHOR_EMAIL: github-actions@github.com
