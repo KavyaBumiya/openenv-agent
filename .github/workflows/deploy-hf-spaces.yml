@@ -51,7 +51,7 @@ jobs:
 
           # Upload current repo contents to the target Space.
           # This avoids git credential URL edge-cases in CI.
-          huggingface-cli upload \
+          python -m huggingface_hub.commands.huggingface_cli upload \
             "${{ env.REPO_ID }}" \
             . \
             --repo-type "${{ env.REPO_TYPE }}" \
