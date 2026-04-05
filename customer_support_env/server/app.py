@@ -168,8 +168,10 @@ async def get_grader():
 
 
 @app.post("/reset")
-async def reset(req: ResetRequest = Body(default_factory=ResetRequest)):
+async def reset(req: Optional[ResetRequest] = None):
     try:
+        if req is None:
+            req = ResetRequest()
         session_id = req.session_id or str(uuid.uuid4())
         env = CustomerSupportEnvironment()
         obs = env.reset(task=req.task, seed=req.seed, episode_id=req.episode_id)
