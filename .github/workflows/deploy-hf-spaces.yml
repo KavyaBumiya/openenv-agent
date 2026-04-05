@@ -7,7 +7,7 @@ on:
 
 env:
   REPO_TYPE: space
-  REPO_ID: ${{ github.repository_owner }}/openenv
+  REPO_ID: kavyabumiya/openenv
   SPACE_NAME: openenv
 
 jobs:
