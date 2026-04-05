@@ -50,15 +50,30 @@ jobs:
           PY
 
           # Upload current repo contents to the target Space.
-          # This avoids git credential URL edge-cases in CI.
-          python -m huggingface_hub.commands.huggingface_cli upload \
-            "${{ env.REPO_ID }}" \
-            . \
-            --repo-type "${{ env.REPO_TYPE }}" \
-            --token "${{ secrets.HF_TOKEN }}" \
-            --commit-message "Deploy from GitHub Actions ${GITHUB_SHA}"
+          # Using Python API avoids CLI entrypoint/path/version breakages.
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+
+          token = os.environ["HF_TOKEN"]
+          repo_id = os.environ["REPO_ID"]
+          repo_type = os.environ["REPO_TYPE"]
+          sha = os.environ.get("GITHUB_SHA", "unknown")
+
+          api = HfApi(token=token)
+          api.upload_folder(
+              repo_id=repo_id,
+              repo_type=repo_type,
+              folder_path=".",
+              commit_message=f"Deploy from GitHub Actions {sha}",
+              ignore_patterns=[".git/*", ".venv/*", "**/.venv/*"],
+          )
+          print("HF upload completed")
+          PY
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          REPO_ID: ${{ env.REPO_ID }}
+          REPO_TYPE: ${{ env.REPO_TYPE }}
           GIT_AUTHOR_NAME: github-actions
           GIT_AUTHOR_EMAIL: github-actions@github.com
           GIT_COMMITTER_NAME: github-actions
