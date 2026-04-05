@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  deployments: write
+
 env:
   REPO_TYPE: space
   REPO_ID: kavyabumiya/openenv
@@ -17,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -57,6 +61,7 @@ jobs:
           sleep 10
 
       - name: Create GitHub deployment
+        continue-on-error: true
         uses: actions/github-script@v6
         with:
           script: |
