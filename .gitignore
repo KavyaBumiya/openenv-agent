@@ -60,3 +60,14 @@ htmlcov/
 /validate_*.log
 /wsl_status.txt
 .hf_deploy_tmp/
+
+# Removed cleanup files - do not commit
+test_*.py
+verify_*.py
+generate_synthetic_data.py
+restart_space.py
+baseline_scores.json
+DEPLOYMENT_SUMMARY.md
+inference_stderr_audit.log
+inference_stdout_audit.log
+uv.lock
