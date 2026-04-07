@@ -20,6 +20,7 @@ import uuid
 from typing import Dict, Literal, Optional, Tuple
 
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from ..environment import CustomerSupportEnvironment
@@ -83,6 +84,11 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> Response:
+    return Response(status_code=204)
 
 
 @app.get("/tasks")
