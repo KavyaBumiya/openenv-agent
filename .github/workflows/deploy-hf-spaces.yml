@@ -11,8 +11,8 @@ permissions:
 
 env:
   REPO_TYPE: space
-  REPO_ID: kavyabumiya/openenv
-  SPACE_NAME: openenv
+  REPO_ID: kavyabumiya/customer-support-env
+  SPACE_NAME: customer-support-env
 
 jobs:
   deploy:
