@@ -164,37 +164,37 @@ class TicketReward(BaseModel):
 
     value: float = Field(
         ...,
-        ge=0.0,
-        le=1.0,
-        description="Final shaped reward value in [0.0, 1.0] for this step.",
+        gt=0.0,
+        lt=1.0,
+        description="Final shaped reward value strictly in (0.0, 1.0) for this step.",
     )
 
     raw_score: float = Field(
         ...,
-        ge=0.0,
-        le=1.0,
-        description="Task grader score before trajectory shaping penalties.",
+        gt=0.0,
+        lt=1.0,
+        description="Task grader score strictly in (0.0, 1.0) before trajectory shaping penalties.",
     )
 
     progress_gain: float = Field(
         ...,
         ge=0.0,
         le=1.0,
-        description="Positive improvement compared with best prior score in this episode.",
+        description="Positive improvement compared with best prior score in this episode (can be 0.0 or 1.0).",
     )
 
     repeated_action_penalty: float = Field(
         ...,
         ge=0.0,
         le=1.0,
-        description="Penalty applied when repeating an action signature.",
+        description="Penalty applied when repeating an action signature (can be 0.0 or 1.0).",
     )
 
     extra_step_penalty: float = Field(
         ...,
         ge=0.0,
         le=1.0,
-        description="Penalty applied for additional steps beyond the first.",
+        description="Penalty applied for additional steps beyond the first (can be 0.0 or 1.0).",
     )
 
 

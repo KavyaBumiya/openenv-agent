@@ -354,7 +354,7 @@ ESCALATION CRITERIA (requires_escalation=true):
         ).model_dump()
         info.update(
             {
-                "raw_score": round(raw_score, 3),
+                "raw_score": _strict_unit_score(round(raw_score, 3)),
                 "feedback": feedback,
                 "reward_breakdown": reward_model.model_dump(),
             }
@@ -380,7 +380,7 @@ ESCALATION CRITERIA (requires_escalation=true):
         final_reward = _strict_unit_score(max(0.0, progress_gain - step_penalty - loop_penalty))
         return TicketReward(
             value=final_reward,
-            raw_score=round(raw_score, 3),
+            raw_score=_strict_unit_score(round(raw_score, 3)),
             progress_gain=round(progress_gain, 3),
             repeated_action_penalty=round(loop_penalty, 3),
             extra_step_penalty=round(step_penalty, 3),
