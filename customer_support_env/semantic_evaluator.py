@@ -15,7 +15,7 @@ from typing import Optional, Dict, Any
 logger = logging.getLogger(__name__)
 
 try:
-    from sentence_transformers import SentenceTransformer, util as st_util
+    from sentence_transformers import SentenceTransformer, util as st_util  # type: ignore
     SEMANTIC_AVAILABLE = True
 except ImportError:
     SEMANTIC_AVAILABLE = False
