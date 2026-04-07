@@ -28,11 +28,28 @@ from ..models import TicketAction, TicketObservation
 
 logger = logging.getLogger(__name__)
 
+print("🔧 [STARTUP] Initializing FastAPI app...", flush=True)
+
 app = FastAPI(
     title="Customer Support RL Environment",
     description="OpenEnv-compliant customer-support ticket triage environment.",
     version="0.1.0",
 )
+
+print("🔧 [STARTUP] FastAPI app created", flush=True)
+
+# Startup and shutdown event handlers for debugging
+@app.on_event("startup")
+async def startup_event():
+    print("✅ [STARTUP] Application startup event triggered", flush=True)
+    logger.info("Application startup event triggered")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    print("❌ [SHUTDOWN] Application shutting down", flush=True)
+    logger.info("Application shutting down")
+
+print("🔧 [STARTUP] Event handlers registered", flush=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Session store  (in-memory; scoped per container instance)
