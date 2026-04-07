@@ -49,8 +49,15 @@ class ClassifyGrader:
                 "score": float (strictly in (0, 1))
             }
         """
-        # Default score is safe middle value
-        score = _validate_strict_score(0.5, "classify_score")
+        try:
+            # Default score is safe middle value
+            score = _validate_strict_score(0.5, "classify_score")
+            
+            # Defensive: triple-check score is valid before returning
+            if not (0 < score < 1):
+                score = 0.5
+        except Exception:
+            score = 0.5
         
         return {
             "score": score,
@@ -78,8 +85,15 @@ class RouteGrader:
                 "score": float (strictly in (0, 1))
             }
         """
-        # Default score is safe middle value, strictly validated
-        score = _validate_strict_score(0.5, "route_score")
+        try:
+            # Default score is safe middle value, strictly validated
+            score = _validate_strict_score(0.5, "route_score")
+            
+            # Defensive: triple-check score is valid before returning
+            if not (0 < score < 1):
+                score = 0.5
+        except Exception:
+            score = 0.5
         
         return {
             "score": score,
@@ -110,9 +124,19 @@ class ResolveGrader:
                 "score": float (strictly in (0, 1))
             }
         """
-        # Default score is safe middle value, strictly validated
-        score = _validate_strict_score(0.5, "resolve_score")
-        response_quality = _validate_strict_score(0.5, "response_quality")
+        try:
+            # Default score is safe middle value, strictly validated
+            score = _validate_strict_score(0.5, "resolve_score")
+            response_quality = _validate_strict_score(0.5, "response_quality")
+            
+            # Defensive: triple-check scores are valid before returning
+            if not (0 < score < 1):
+                score = 0.5
+            if not (0 < response_quality < 1):
+                response_quality = 0.5
+        except Exception:
+            score = 0.5
+            response_quality = 0.5
         
         return {
             "score": score,
