@@ -427,6 +427,7 @@ ESCALATION CRITERIA (requires_escalation=true):
         """Build a typed reward model with transparent shaping components.
         
         DEFENSIVE: All components are validated to be strictly in (0, 1).
+        Phase 2: ALL numeric values must be strictly in (0, 1).
         """
         prev_best = self._state.best_score
         progress_gain = max(0.0, raw_score - prev_best)
@@ -435,15 +436,19 @@ ESCALATION CRITERIA (requires_escalation=true):
         final_reward_raw = max(0.0, progress_gain - step_penalty - loop_penalty)
         
         # Comprehensive validation of all components
+        # Phase 2 requirement: ALL numeric values must be strictly in (0, 1)
         value = _validate_strict_score(final_reward_raw, "reward_value")
         raw_score_clamped = _validate_strict_score(raw_score, "raw_score_component")
+        progress_gain_clamped = _validate_strict_score(progress_gain, "progress_gain")
+        step_penalty_clamped = _validate_strict_score(step_penalty, "extra_step_penalty")
+        loop_penalty_clamped = _validate_strict_score(loop_penalty, "repeated_action_penalty")
         
         return TicketReward(
             value=value,
             raw_score=raw_score_clamped,
-            progress_gain=round(progress_gain, 3),  # Can be 0.0 (ge=0.0)
-            repeated_action_penalty=round(loop_penalty, 3),  # Can be 0.0 (ge=0.0)
-            extra_step_penalty=round(step_penalty, 3),  # Can be 0.0 (ge=0.0)
+            progress_gain=progress_gain_clamped,  # Strictly in (0, 1)
+            repeated_action_penalty=loop_penalty_clamped,  # Strictly in (0, 1)
+            extra_step_penalty=step_penalty_clamped,  # Strictly in (0, 1)
         )
 
     def _action_signature(self, action: TicketAction) -> str:
