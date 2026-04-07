@@ -620,13 +620,11 @@ ESCALATION CRITERIA (requires_escalation=true):
         - So we give partial credit for reasonable fallbacks
         
         Returns:
-            1.0 for exact match
-            0.4 for tier1 when tier2 expected (acceptable fallback)
-            0.4 for tier2 when engineering expected, or engineering when tier2 expected
-            0.0 otherwise
+            Strictly in (0, 1) range for Phase 2 validation
         """
         if not predicted:
-            return 0.0
+            # No department predicted - return clamped minimum
+            return _strict_unit_score(0.0)
         
         if predicted == actual:
             return _strict_unit_score(self.DEPARTMENT_EXACT_SCORE)
