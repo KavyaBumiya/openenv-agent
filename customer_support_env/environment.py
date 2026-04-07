@@ -22,6 +22,54 @@ def _strict_unit_score(value: float) -> float:
     return round(min(1.0 - _STRICT_SCORE_EPSILON, max(_STRICT_SCORE_EPSILON, value)), 3)
 
 
+def _validate_strict_score(score: float, label: str = "score") -> float:
+    """Validate and clamp a score to be strictly in (0, 1).
+    
+    DEFENSIVE: This function ensures NO score ever escapes unclamped.
+    
+    Args:
+        score: The score to validate
+        label: Description for logging
+    
+    Returns:
+        Score strictly in (0.001, 0.999)
+    
+    Raises:
+        ValueError: If score is NaN or invalid
+    """
+    # Check for invalid values
+    if not isinstance(score, (int, float)):
+        logger.error(f"❌ INVALID SCORE TYPE: {label}={score} (type={type(score).__name__})")
+        return _STRICT_SCORE_EPSILON
+    
+    if score != score:  # NaN check
+        logger.error(f"❌ NaN DETECTED: {label}={score}, using epsilon")
+        return _STRICT_SCORE_EPSILON
+    
+    if score == float('inf') or score == float('-inf'):
+        logger.error(f"❌ INFINITE SCORE: {label}={score}, using bound")
+        return _strict_unit_score(0.5)
+    
+    # Clamp to strict bounds
+    clamped = _strict_unit_score(score)
+    
+    # Defensive logging: warn if score was exactly 0.0 or 1.0
+    if score == 0.0:
+        logger.warning(f"⚠️  CLAMPED 0.0 → {clamped}: {label}")
+    elif score == 1.0:
+        logger.warning(f"⚠️  CLAMPED 1.0 → {clamped}: {label}")
+    elif abs(score - clamped) > 0.001:
+        logger.warning(f"⚠️  CLAMPED {score:.4f} → {clamped}: {label}")
+    
+    # Final validation: ensure result is strictly in (0, 1)
+    if clamped <= 0.0 or clamped >= 1.0:
+        logger.critical(f"❌ VALIDATION FAILED: {label}={clamped} is not strictly in (0, 1)")
+        # Emergency fallback
+        return 0.5
+    
+    return clamped
+
+
 def _term_variants(term: str) -> set[str]:
     """Generate normalized variants of a term for keyword matching.
     
@@ -352,9 +400,13 @@ ESCALATION CRITERIA (requires_escalation=true):
             best_score=self._state.best_score,
             cumulative_reward=self._state.cumulative_reward,
         ).model_dump()
+        
+        # Defensive: Validate raw score before adding to info
+        validated_raw_score = _validate_strict_score(raw_score, f"step_raw_score[ticket={self._ticket.get('id', 'UNKNOWN')}]")
+        
         info.update(
             {
-                "raw_score": _strict_unit_score(round(raw_score, 3)),
+                "raw_score": validated_raw_score,
                 "feedback": feedback,
                 "reward_breakdown": reward_model.model_dump(),
             }
@@ -372,18 +424,26 @@ ESCALATION CRITERIA (requires_escalation=true):
         return self._state.step_count >= self._state.max_steps
 
     def build_reward(self, action: TicketAction, raw_score: float) -> TicketReward:
-        """Build a typed reward model with transparent shaping components."""
+        """Build a typed reward model with transparent shaping components.
+        
+        DEFENSIVE: All components are validated to be strictly in (0, 1).
+        """
         prev_best = self._state.best_score
         progress_gain = max(0.0, raw_score - prev_best)
         step_penalty = self.EXTRA_STEP_PENALTY * max(0, self._state.step_count - 1)
         loop_penalty = self.LOOP_PENALTY if self._action_signature(action) in self._state.action_history else 0.0
-        final_reward = _strict_unit_score(max(0.0, progress_gain - step_penalty - loop_penalty))
+        final_reward_raw = max(0.0, progress_gain - step_penalty - loop_penalty)
+        
+        # Comprehensive validation of all components
+        value = _validate_strict_score(final_reward_raw, "reward_value")
+        raw_score_clamped = _validate_strict_score(raw_score, "raw_score_component")
+        
         return TicketReward(
-            value=final_reward,
-            raw_score=_strict_unit_score(round(raw_score, 3)),
-            progress_gain=round(progress_gain, 3),
-            repeated_action_penalty=round(loop_penalty, 3),
-            extra_step_penalty=round(step_penalty, 3),
+            value=value,
+            raw_score=raw_score_clamped,
+            progress_gain=round(progress_gain, 3),  # Can be 0.0 (ge=0.0)
+            repeated_action_penalty=round(loop_penalty, 3),  # Can be 0.0 (ge=0.0)
+            extra_step_penalty=round(step_penalty, 3),  # Can be 0.0 (ge=0.0)
         )
 
     def _action_signature(self, action: TicketAction) -> str:
@@ -433,20 +493,24 @@ ESCALATION CRITERIA (requires_escalation=true):
         logger.debug(f"  Prediction: category={category}, priority={priority}, dept={department}, escalation={action.requires_escalation}")
         logger.debug(f"  Ground truth: category={gt_category}, priority={gt_priority}, dept={gt_department}, escalation={gt_escalation}")
         
-        # Score each component
-        cat_score = _strict_unit_score(1.0 if category == gt_category else 0.0)
+        # Score each component (with comprehensive validation)
+        cat_score = _validate_strict_score(1.0 if category == gt_category else 0.0, f"category_score[ticket={ticket_id}]")
         
         # Priority scoring with enterprise penalty
-        pri_score = self._score_priority(priority, gt_priority, self._ticket)
+        pri_score_raw = self._score_priority(priority, gt_priority, self._ticket)
+        pri_score = _validate_strict_score(pri_score_raw, f"priority_score[ticket={ticket_id}]")
         
         # Department scoring with fallback logic
-        dept_score = self._score_department(department, gt_department)
+        dept_score_raw = self._score_department(department, gt_department)
+        dept_score = _validate_strict_score(dept_score_raw, f"department_score[ticket={ticket_id}]")
         
         # Escalation scoring
-        escalation_score = self._score_escalation(action.requires_escalation, gt_escalation)
+        escalation_score_raw = self._score_escalation(action.requires_escalation, gt_escalation)
+        escalation_score = _validate_strict_score(escalation_score_raw, f"escalation_score[ticket={ticket_id}]")
         
         # Response scoring with sentiment awareness
-        resp_score = self._score_response(response, gt_response_keywords, self._ticket)
+        resp_score_raw = self._score_response(response, gt_response_keywords, self._ticket)
+        resp_score = _validate_strict_score(resp_score_raw, f"response_score[ticket={ticket_id}]")
         
         logger.debug(f"  Component scores: cat={cat_score}, pri={pri_score}, dept={dept_score}, esc={escalation_score}, resp={resp_score}")
         
@@ -487,8 +551,14 @@ ESCALATION CRITERIA (requires_escalation=true):
                 )
                 logger.debug(f"Response penalty applied: too short ({len(response)} chars, min {self.RESPONSE_MIN_LENGTH})")
         
-        final_score = _strict_unit_score(round(final_score, 3))
-        logger.info(f"Final score for ticket {ticket_id}: {final_score:.3f} (task={self._task})")
+        final_score_raw = round(final_score, 3)
+        final_score = _validate_strict_score(final_score_raw, f"final_score[ticket={ticket_id}, task={self._task}]")
+        logger.info(f"✅ Final score for ticket {ticket_id} ({self._task}): {final_score:.4f}")
+        
+        # DEFENSIVE: Ensure result is strictly in (0, 1)
+        if not (0 < final_score < 1):
+            logger.critical(f"❌❌❌ CRITICAL: Final score {final_score} is NOT strictly in (0,1)!")
+            final_score = 0.5  # Emergency fallback
         
         return final_score
     

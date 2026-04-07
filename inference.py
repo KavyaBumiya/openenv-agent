@@ -92,6 +92,47 @@ def _sanitize_single_line(value: Optional[str]) -> str:
     return value.replace("\r", " ").replace("\n", " ").strip()
 
 
+def _validate_strict_score(score: float, label: str = "score") -> float:
+    """Validate and clamp a score to be strictly in (0, 1).
+    
+    DEFENSIVE: This function ensures NO score ever escapes unclamped.
+    Phase 2 validator requires: 0 < score < 1 (strictly)
+    """
+    # Handle invalid types
+    if not isinstance(score, (int, float)):
+        print(f"[WARN] Score {label} has invalid type {type(score).__name__}, using epsilon", file=os.sys.stderr, flush=True)
+        return STRICT_SCORE_EPSILON
+    
+    # Handle NaN
+    if score != score:
+        print(f"[WARN] Score {label} is NaN, using epsilon", file=os.sys.stderr, flush=True)
+        return STRICT_SCORE_EPSILON
+    
+    # Handle infinity
+    if score == float('inf') or score == float('-inf'):
+        print(f"[WARN] Score {label} is infinite, using midpoint", file=os.sys.stderr, flush=True)
+        return 0.5
+    
+    # Clamp to strict bounds
+    clamped = round(min(1.0 - STRICT_SCORE_EPSILON, max(STRICT_SCORE_EPSILON, score)), 4)
+    
+    # Log if clamping happened
+    if score == 0.0:
+        print(f"[WARN] Score {label}=0.0 clamped to {clamped}", file=os.sys.stderr, flush=True)
+    elif score == 1.0:
+        print(f"[WARN] Score {label}=1.0 clamped to {clamped}", file=os.sys.stderr, flush=True)
+    elif abs(score - clamped) > 0.0005:
+        print(f"[WARN] Score {label}={score:.4f} clamped to {clamped:.4f}", file=os.sys.stderr, flush=True)
+    
+    # Final check: ensure strictly in (0, 1)
+    if clamped <= 0.0 or clamped >= 1.0:
+        print(f"[ERROR] Score {label}={clamped} is NOT strictly in (0, 1)! Using 0.5", file=os.sys.stderr, flush=True)
+        return 0.5
+    
+    return clamped
+
+
+
 def _episode_score(rewards: List[float]) -> float:
     """Return a normalized per-episode score in [0, 1]."""
     if not rewards:
@@ -401,11 +442,17 @@ def main() -> None:
     for task in TASKS:
         task_scores = results[task]
         mean_score = (sum(task_scores) / len(task_scores)) if task_scores else 0.0
-        strict_mean = _strict_task_score(mean_score)
+        
+        # DEFENSIVE: Comprehensively validate task scores
+        strict_mean = _validate_strict_score(mean_score, f"task_mean_score[{task}]")
         summary["task_scores"][task] = strict_mean
+        
+        # Also validate each episode reward
+        validated_episode_rewards = [_validate_strict_score(v, f"episode_reward[{task}]") for v in task_scores]
+        
         summary["task_score_details"][task] = {
-            "mean_episode_score": _strict_summary_score(mean_score),
-            "episode_rewards": [_strict_summary_score(v) for v in task_scores],
+            "mean_episode_score": strict_mean,
+            "episode_rewards": validated_episode_rewards,
         }
         print(
             f"task={task} episodes={len(task_scores)} mean_episode_score={mean_score:.3f} "
@@ -415,9 +462,25 @@ def main() -> None:
         )
 
     overall_scores = [score for task_scores in results.values() for score in task_scores]
-    summary["overall_mean_episode_score"] = _strict_summary_score(
-        (sum(overall_scores) / len(overall_scores)) if overall_scores else 0.0,
-    )
+    overall_mean = (sum(overall_scores) / len(overall_scores)) if overall_scores else 0.0
+    validated_overall_mean = _validate_strict_score(overall_mean, "overall_mean_episode_score")
+    summary["overall_mean_episode_score"] = validated_overall_mean
+    
+    # FINAL VALIDATION BEFORE JSON OUTPUT
+    print("\n" + "="*60, file=os.sys.stderr, flush=True)
+    print("FINAL VALIDATION CHECK", file=os.sys.stderr, flush=True)
+    print("="*60, file=os.sys.stderr, flush=True)
+    
+    all_scores_to_check = list(summary["task_scores"].values()) + [summary["overall_mean_episode_score"]]
+    all_scores_to_check.extend(s for task_detail in summary["task_score_details"].values() for s in task_detail["episode_rewards"])
+    
+    for i, score in enumerate(all_scores_to_check):
+        if not (0 < score < 1):
+            print(f"❌ VALIDATION FAILED: Score #{i} = {score} is NOT strictly in (0, 1)", file=os.sys.stderr, flush=True)
+        else:
+            print(f"✅ Score #{i} = {score:.4f} is valid", file=os.sys.stderr, flush=True)
+    
+    print("="*60 + "\n", file=os.sys.stderr, flush=True)
 
     with open(BASELINE_OUTPUT_PATH, "w", encoding="utf-8") as fp:
         json.dump(summary, fp, indent=2)
