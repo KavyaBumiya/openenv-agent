@@ -72,7 +72,7 @@ jobs:
           PY
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || '' }}
           REPO_ID: ${{ env.REPO_ID }}
           REPO_TYPE: ${{ env.REPO_TYPE }}
           GIT_AUTHOR_NAME: github-actions
