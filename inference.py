@@ -76,13 +76,13 @@ def log_step(step: int, action: str, reward: float,
     err = _sanitize_single_line(error) if error else "null"
     print(
         f"[STEP] step={step} action={_sanitize_single_line(action)} "
-        f"reward={reward:.2f} done={str(done).lower()} error={err}",
+        f"reward={reward:.4f} done={str(done).lower()} error={err}",
         flush=True,
     )
 
 
 def log_end(success: bool, steps: int, rewards: List[float]) -> None:
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    rewards_str = ",".join(f"{r:.4f}" for r in rewards)
     print(f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}", flush=True)
 
 
@@ -101,6 +101,11 @@ def _episode_score(rewards: List[float]) -> float:
 
 def _strict_summary_score(value: float) -> float:
     return round(min(1.0 - STRICT_SCORE_EPSILON, max(STRICT_SCORE_EPSILON, value)), 4)
+
+
+def _strict_task_score(value: float) -> float:
+    """Return a task-level score guaranteed to be strictly inside (0, 1)."""
+    return _strict_summary_score(value)
 
 # ---------------------------------------------------------------------------
 # Environment HTTP client
@@ -307,21 +312,21 @@ def run_episode(task: str, seed: int) -> tuple[bool, float]:
             }
 
             result = None
-            reward = 0.0
+            reward = STRICT_SCORE_EPSILON
             done = False
             final_obs: dict = {}
             step_error: Optional[str] = error_msg
 
             try:
                 result = env.step(payload)
-                reward = float(result.get("reward", 0.0))
+                reward = _strict_summary_score(float(result.get("reward", 0.0)))
                 done = bool(result.get("done", True))
                 final_obs = result.get("observation", {}) or {}
                 last_action_error = final_obs.get("last_action_error") if isinstance(final_obs, dict) else None
                 if last_action_error is not None:
                     step_error = str(last_action_error)
             except Exception as exc:
-                reward = 0.0
+                reward = STRICT_SCORE_EPSILON
                 done = True
                 final_obs = obs or {}
                 step_error = str(exc)
@@ -388,6 +393,7 @@ def main() -> None:
         "api_base_url": API_BASE_URL,
         "episodes_per_task": len(SEEDS),
         "task_scores": {},
+        "task_score_details": {},
     }
 
     # Keep strict stdout reserved for [START]/[STEP]/[END] lines only.
@@ -395,7 +401,9 @@ def main() -> None:
     for task in TASKS:
         task_scores = results[task]
         mean_score = (sum(task_scores) / len(task_scores)) if task_scores else 0.0
-        summary["task_scores"][task] = {
+        strict_mean = _strict_task_score(mean_score)
+        summary["task_scores"][task] = strict_mean
+        summary["task_score_details"][task] = {
             "mean_episode_score": _strict_summary_score(mean_score),
             "episode_rewards": [_strict_summary_score(v) for v in task_scores],
         }

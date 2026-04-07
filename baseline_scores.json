@@ -4,6 +4,11 @@
   "api_base_url": "https://router.huggingface.co/v1",
   "episodes_per_task": 3,
   "task_scores": {
+    "classify": 0.156,
+    "route": 0.281,
+    "resolve": 0.225
+  },
+  "task_score_details": {
     "classify": {
       "mean_episode_score": 0.156,
       "episode_rewards": [
