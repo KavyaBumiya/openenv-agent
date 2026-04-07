@@ -732,18 +732,27 @@ ESCALATION CRITERIA (requires_escalation=true):
         return _strict_unit_score(round(base_score, 2))
     
     def _build_feedback(self, action: TicketAction, score: float) -> str:
-        """Build human-readable explanation of the grade.
+        """Build human-readable explanation of the grade with AI assistance.
         
         Includes:
         - Category/priority/department correctness
         - Escalation judgment assessment
         - Response quality feedback (if resolve task)
         - Overall quality rating
+        - AI-generated constructive feedback (if available)
         
         Used for grading transparency and debugging.
         """
         if self._ticket is None:
             raise RuntimeError("reset() must be called before step()")
+        
+        # Import OpenAI integration at method level to avoid circular imports
+        try:
+            from .openai_integration import get_openai_integration
+            openai = get_openai_integration()
+        except ImportError:
+            openai = None
+        
         gt_category = self._ticket["category"]
         gt_priority = self._ticket["priority"]
         gt_department = self._ticket["department"]
@@ -826,4 +835,19 @@ ESCALATION CRITERIA (requires_escalation=true):
         else:
             quality = "Needs improvement"
         
-        return f"{' | '.join(feedback_parts)} | Score: {quality} ({score:.2f})"
+        base_feedback = f"{' | '.join(feedback_parts)} | Score: {quality} ({score:.2f})"
+        
+        # Add AI-generated constructive feedback if available
+        if openai and openai.enabled and self._ticket:
+            try:
+                ai_feedback = openai.generate_feedback(
+                    score=score,
+                    action_type=self._task,
+                    context=f"Ticket: {self._ticket.get('subject', '')}"
+                )
+                base_feedback += f" | AI: {ai_feedback}"
+            except Exception as e:
+                logger.debug(f"AI feedback generation failed: {e}")
+                # Silently fail - feedback still returns base content
+        
+        return base_feedback

@@ -38,6 +38,7 @@ sys.stdout.flush()
 
 from ..environment import CustomerSupportEnvironment
 from ..models import TicketAction, TicketObservation
+from .openai_endpoints import router as openai_router
 
 print("[APP-IMPORTS] All imports successful OK", flush=True)
 sys.stdout.flush()
@@ -53,6 +54,9 @@ app = FastAPI(
     description="OpenEnv-compliant customer-support ticket triage environment.",
     version="0.1.0",
 )
+
+# Register OpenAI-powered endpoints
+app.include_router(openai_router)
 
 print("[STARTUP] FastAPI app created OK", flush=True)
 sys.stdout.flush()

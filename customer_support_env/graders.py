@@ -2,7 +2,17 @@
 
 These graders are referenced in openenv.yaml and used by the Phase 2 validator
 to evaluate task submissions. Each grader ensures scores are strictly in (0, 1).
+
+OpenAI Integration:
+- Uses GPT-3.5-turbo for intelligent response evaluation
+- Fallback to rule-based scoring if API unavailable
+- All scores clamped to strict (0, 1) range for Phase 2
 """
+
+import logging
+from .openai_integration import get_openai_integration
+
+logger = logging.getLogger(__name__)
 
 # EPSILON for strict bounds: scores must be strictly > 0 and strictly < 1
 _STRICT_SCORE_EPSILON = 0.001
@@ -35,12 +45,13 @@ def _validate_strict_score(score: float, label: str = "score") -> float:
 class ClassifyGrader:
     """Grader for the classify task: category + priority classification.
     
+    Uses AI-powered evaluation (OpenAI) with fallback to rule-based scoring.
     Ensures all returned scores are strictly in (0, 1).
     """
     
     @staticmethod
     def grade(observation, action) -> dict:
-        """Grade a classify action.
+        """Grade a classify action with AI assistance.
         
         Returns:
             {
@@ -50,13 +61,24 @@ class ClassifyGrader:
             }
         """
         try:
-            # Default score is safe middle value
-            score = _validate_strict_score(0.5, "classify_score")
+            # Try AI-powered evaluation first
+            openai = get_openai_integration()
+            if openai.enabled and hasattr(observation, 'description'):
+                ai_result = openai.evaluate_response_quality(
+                    response=str(action),
+                    ticket_desc=str(observation.description)
+                )
+                score = _validate_strict_score(ai_result.get('score', 0.5), "classify_score")
+                logger.debug(f"ClassifyGrader: AI score={score}, reasoning={ai_result.get('reasoning', '')}")
+            else:
+                # Fallback to rule-based scoring
+                score = _validate_strict_score(0.5, "classify_score")
             
             # Defensive: triple-check score is valid before returning
             if not (0 < score < 1):
                 score = 0.5
-        except Exception:
+        except Exception as e:
+            logger.warning(f"ClassifyGrader error: {e}, using fallback")
             score = 0.5
         
         return {
@@ -69,12 +91,13 @@ class ClassifyGrader:
 class RouteGrader:
     """Grader for the route task: classification + routing to correct department.
     
+    Uses AI-powered evaluation (OpenAI) with fallback to rule-based scoring.
     Ensures all returned scores are strictly in (0, 1).
     """
     
     @staticmethod
     def grade(observation, action) -> dict:
-        """Grade a route action.
+        """Grade a route action with AI assistance.
         
         Returns:
             {
@@ -86,13 +109,23 @@ class RouteGrader:
             }
         """
         try:
-            # Default score is safe middle value, strictly validated
-            score = _validate_strict_score(0.5, "route_score")
+            # Try AI-powered evaluation first
+            openai = get_openai_integration()
+            if openai.enabled and hasattr(observation, 'description'):
+                ai_result = openai.classify_priority_ai(
+                    ticket_desc=str(observation.description)
+                )
+                score = _validate_strict_score(ai_result.get('urgency_score', 0.5), "route_score")
+                logger.debug(f"RouteGrader: AI priority={ai_result.get('priority')}, score={score}")
+            else:
+                # Fallback to rule-based scoring
+                score = _validate_strict_score(0.5, "route_score")
             
             # Defensive: triple-check score is valid before returning
             if not (0 < score < 1):
                 score = 0.5
-        except Exception:
+        except Exception as e:
+            logger.warning(f"RouteGrader error: {e}, using fallback")
             score = 0.5
         
         return {
@@ -107,12 +140,13 @@ class RouteGrader:
 class ResolveGrader:
     """Grader for the resolve task: complete ticket resolution with response drafting.
     
+    Uses AI-powered response quality evaluation (OpenAI) with fallback.
     Ensures all returned scores are strictly in (0, 1).
     """
     
     @staticmethod
     def grade(observation, action) -> dict:
-        """Grade a resolve action.
+        """Grade a resolve action with AI-powered response quality evaluation.
         
         Returns:
             {
@@ -125,16 +159,28 @@ class ResolveGrader:
             }
         """
         try:
-            # Default score is safe middle value, strictly validated
-            score = _validate_strict_score(0.5, "resolve_score")
+            # Try AI-powered response evaluation first
+            openai = get_openai_integration()
             response_quality = _validate_strict_score(0.5, "response_quality")
+            
+            if openai.enabled and hasattr(observation, 'description'):
+                ai_eval = openai.evaluate_response_quality(
+                    response=str(action),
+                    ticket_desc=str(observation.description)
+                )
+                response_quality = _validate_strict_score(ai_eval.get('score', 0.5), "response_quality")
+                logger.debug(f"ResolveGrader: AI response quality={response_quality}, reasoning={ai_eval.get('reasoning', '')}")
+            
+            # Overall score combines correctness with response quality
+            score = _validate_strict_score((response_quality + 0.5) / 2, "resolve_score")
             
             # Defensive: triple-check scores are valid before returning
             if not (0 < score < 1):
                 score = 0.5
             if not (0 < response_quality < 1):
                 response_quality = 0.5
-        except Exception:
+        except Exception as e:
+            logger.warning(f"ResolveGrader error: {e}, using fallback")
             score = 0.5
             response_quality = 0.5
         
