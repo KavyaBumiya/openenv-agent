@@ -35,5 +35,5 @@ EXPOSE 7860
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:7860/health || exit 1
 
-# Start FastAPI application with explicit logging
-CMD ["uvicorn", "customer_support_env.server.app:app", "--host", "0.0.0.0", "--port", "7860", "--log-level", "info", "--access-log"]
+# Start FastAPI application through Python wrapper with comprehensive error handling
+CMD ["python", "server/app.py"]
