@@ -360,7 +360,7 @@ class RuleBasedGrader:
             ),
             enterprise_penalty=route_breakdown.enterprise_penalty,
             sla_penalty=route_breakdown.sla_penalty,
-            empathy_bonus=route_breakdown.empathy_bonus,
+            empathy_bonus=empathy_bonus,  # Use locally-computed empathy_bonus, not route_breakdown
             weighted_score=weighted_score,
             task_type="resolve",
             what_went_right=what_went_right,
