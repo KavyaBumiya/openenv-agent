@@ -3,7 +3,7 @@ openenv-core==0.2.0
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
-websockets==12.0
+websockets==15.0.1
 
 # LLM — OpenAI client (works with HF router and other OpenAI-compatible endpoints)
 openai==2.7.2
