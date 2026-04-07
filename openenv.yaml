@@ -11,6 +11,7 @@ episode_type: multi-turn
 
 tasks:
   - name: classify
+    grader: customer_support_env.graders:ClassifyGrader
     description: >
       Classify ticket into category (billing/technical/account/general/shipping)
       and assign priority (low/medium/high/urgent).
@@ -38,6 +39,7 @@ tasks:
       - policy_excerpt
 
   - name: route
+    grader: customer_support_env.graders:RouteGrader
     description: >
       Classify a ticket and route it to the right department
       (tier1/tier2/billing/engineering/management), with optional escalation flag.
@@ -73,6 +75,7 @@ tasks:
       - policy_excerpt
 
   - name: resolve
+    grader: customer_support_env.graders:ResolveGrader
     description: >
       Classify, prioritize, route a ticket, then draft a professional
       customer-facing response that acknowledges the issue and provides
