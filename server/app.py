@@ -48,11 +48,27 @@ def main() -> None:
 		print(f"[MAIN] Config: host={host}, port={port}", flush=True)
 		
 		print(f"[MAIN] Starting uvicorn server...", flush=True)
+		print(f"[MAIN] Server will listen on http://{host}:{port}", flush=True)
+		print(f"[MAIN] API docs available at http://{host}:{port}/docs", flush=True)
 		sys.stdout.flush()
 		sys.stderr.flush()
 		
 		uvicorn.run(app, host=host, port=port, log_level="info")
 		
+	except KeyboardInterrupt:
+		print("[MAIN] Server interrupted", flush=True)
+		sys.exit(0)
+	except OSError as e:
+		if "Address already in use" in str(e) or "Errno 48" in str(e) or "Errno 98" in str(e):
+			print(f"[FATAL] Port {port} already in use - check for other running services", flush=True)
+			print(f"[FATAL] Exception: {e}", flush=True)
+			traceback.print_exc(file=sys.stdout)
+			sys.exit(1)
+		else:
+			print(f"[FATAL] Network error during server startup: {e}", flush=True)
+			print(f"[FATAL] Full traceback:", flush=True)
+			traceback.print_exc(file=sys.stdout)
+			sys.exit(1)
 	except Exception as e:
 		print(f"[FATAL] Uvicorn startup failed: {e}", flush=True)
 		traceback.print_exc(file=sys.stdout)
