@@ -4,6 +4,8 @@ emoji: 🎫
 colorFrom: blue
 colorTo: indigo
 sdk: docker
+sdk_version: "4.44.1"
+app_file: server/app.py
 app_port: 7860
 pinned: false
 license: mit
@@ -34,7 +36,7 @@ ticket triage quality, escalation judgment, and response quality under SLA press
 | Episode type | Multi-turn (1-3 steps depending on task) |
 | Dataset | 30 curated tickets across 5 categories |
 | Tasks | 3 (classify → route → resolve) |
-| Reward range | [0.0, 1.0] |
+| Reward range | (0, 1) |
 | Reproducible? | Yes — seeded (`seed % 30 = ticket index`) |
 
 ---
