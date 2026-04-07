@@ -6,7 +6,7 @@ pydantic==2.5.0
 websockets==12.0
 
 # LLM — OpenAI client (works with HF router and other OpenAI-compatible endpoints)
-openai==1.3.8
+openai==2.7.2
 
 # HTTP requests for inference script (calling deployed API)
 httpx==0.25.2
