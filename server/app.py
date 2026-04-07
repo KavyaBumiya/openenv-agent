@@ -8,6 +8,11 @@ import os
 import sys
 import traceback
 
+# Add current directory to path so we can import customer_support_env
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) + "/..")
+print(f"[STARTUP] Added to sys.path: {sys.path[0]}", flush=True)
+sys.stdout.flush()
+
 print("[IMPORTS] Importing modules...", flush=True)
 import uvicorn
 print("[IMPORTS] uvicorn imported OK", flush=True)
