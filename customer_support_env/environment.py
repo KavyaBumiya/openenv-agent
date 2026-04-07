@@ -10,6 +10,10 @@ from .openenv_compat import Environment
 
 from .models import StepInfo, TicketAction, TicketObservation, TicketReward, TicketState
 from .data import TICKETS
+from .rule_based_grader import RuleBasedGrader, DetailedScoreBreakdown
+from .reward_config import RewardConfig
+from .curriculum_manager import CurriculumManager
+from .semantic_evaluator import get_semantic_evaluator
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -250,9 +254,13 @@ ESCALATION CRITERIA (requires_escalation=true):
     }
     
     def __init__(self) -> None:
-        """Initialize environment state variables.
+        """Initialize environment state variables and new AI training components.
         
-        Only instance variables that survive between reset() and step()
+        Initializes:
+        - Rule-based grader (primary training grading)
+        - Reward config (parameterized reward shaping)
+        - Curriculum manager (progressive difficulty)
+        - Semantic evaluator (response quality scoring)
         """
         # Validate reward weights sum to 1.0 for each task
         for task, weights in self.REWARD_WEIGHTS.items():
@@ -262,6 +270,12 @@ ESCALATION CRITERIA (requires_escalation=true):
                     f"REWARD_WEIGHTS['{task}'] sum to {total_weight}, not 1.0. "
                     f"Weights: {weights}"
                 )
+        
+        # Initialize new AI training components
+        self._grader = RuleBasedGrader()
+        self._reward_config = RewardConfig.preset_medium()  # Default: medium difficulty
+        self._curriculum = CurriculumManager()
+        self._evaluator = get_semantic_evaluator()
         
         self._state: TicketState = TicketState()
         self._ticket: Dict[str, Any] | None = None
@@ -352,10 +366,11 @@ ESCALATION CRITERIA (requires_escalation=true):
         
         # Try to grade, gracefully handle malformed actions
         reward_model: TicketReward
+        breakdown: DetailedScoreBreakdown
         try:
-            raw_score = self._grade(action)
+            raw_score, breakdown = self._grade(action)
             reward_model = self.build_reward(action, raw_score)
-            feedback = self._build_feedback(action, raw_score)
+            feedback = self._build_feedback(action, raw_score, breakdown)
         except Exception as e:
             logger.exception("Unexpected grading failure for task %s", self._task)
             raise
@@ -464,108 +479,97 @@ ESCALATION CRITERIA (requires_escalation=true):
             ]
         )
     
-    def _grade(self, action: TicketAction) -> float:
-        """Score the action against ground truth, applying task-specific weights.
+    def _grade(self, action: TicketAction) -> tuple[float, DetailedScoreBreakdown]:
+        """Score the action using rule-based grader with component-level feedback.
         
-        Enhanced with:
-        - Enterprise customer priority awareness
-        - Escalation correctness
-        - SLA urgency modeling
-        - Department routing flexibility
-        
-        Never raises exceptions - returns 0.0 for malformed input.
+        PRIMARY GRADING: Uses RuleBasedGrader for deterministic, transparent scoring
+        instead of OpenAI API. This provides:
+        - Component-level feedback (category, priority, department, escalation, response)
+        - Actionable suggestions (what-went-right, what-went-wrong, next steps)
+        - No external API dependencies (fast, cost-free)
+        - Deterministic results (same input = same output)
         
         Returns:
-            float in [0.0, 1.0]
+            Tuple of (overall_score, detailed_breakdown)
+            - overall_score: float in (0.001, 0.999) after Phase 2 clamping
+            - detailed_breakdown: DetailedScoreBreakdown with component scores and feedback
         """
-        # Normalize inputs (handle None, uppercase, whitespace)
-        category = (action.category or "").strip().lower()
-        priority = (action.priority or "").strip().lower()
-        department = (action.department or "").strip().lower()
-        response = (action.response or "").strip()
-        
-        # Ground truth from dataset
         if self._ticket is None:
             raise RuntimeError("reset() must be called before step()")
-        gt_category = self._ticket["category"].lower()
-        gt_priority = self._ticket["priority"].lower()
-        gt_department = self._ticket["department"].lower()
-        gt_response_keywords = self._ticket.get("response_keywords", [])
-        gt_escalation = self._ticket.get("requires_escalation", False)
+        
+        # Prepare inputs
+        customer_tier = self._ticket.get("tier", "free")
+        
+        # Predicted values (normalized)
+        pred_category = (action.category or "").strip().lower()
+        pred_priority = (action.priority or "").strip().lower()
+        pred_department = (action.department or "").strip().lower()
+        pred_escalation = action.requires_escalation or False
+        response = (action.response or "").strip()
         
         ticket_id = self._ticket.get("id", "UNKNOWN")
         logger.debug(f"Grading action for ticket {ticket_id} (task={self._task})")
-        logger.debug(f"  Prediction: category={category}, priority={priority}, dept={department}, escalation={action.requires_escalation}")
-        logger.debug(f"  Ground truth: category={gt_category}, priority={gt_priority}, dept={gt_department}, escalation={gt_escalation}")
         
-        # Score each component (with comprehensive validation)
-        cat_score = _validate_strict_score(1.0 if category == gt_category else 0.0, f"category_score[ticket={ticket_id}]")
+        # Build action dict for grader
+        action_dict = {
+            "category": pred_category,
+            "priority": pred_priority,
+            "department": pred_department,
+            "requires_escalation": pred_escalation,
+            "response": response,
+        }
         
-        # Priority scoring with enterprise penalty
-        pri_score_raw = self._score_priority(priority, gt_priority, self._ticket)
-        pri_score = _validate_strict_score(pri_score_raw, f"priority_score[ticket={ticket_id}]")
+        # Ground truth from dataset
+        gt_dict = {
+            "category": self._ticket["category"],
+            "priority": self._ticket["priority"],
+            "department": self._ticket["department"],
+            "requires_escalation": self._ticket.get("requires_escalation", False),
+        }
         
-        # Department scoring with fallback logic
-        dept_score_raw = self._score_department(department, gt_department)
-        dept_score = _validate_strict_score(dept_score_raw, f"department_score[ticket={ticket_id}]")
+        # Ticket metadata
+        metadata = {
+            "tier": customer_tier,
+            "open_since_hours": self._ticket.get("open_since_hours", 0),
+            "sentiment": self._ticket.get("sentiment", "neutral"),
+            "response_keywords": self._ticket.get("response_keywords", []),
+        }
         
-        # Escalation scoring
-        escalation_score_raw = self._score_escalation(action.requires_escalation, gt_escalation)
-        escalation_score = _validate_strict_score(escalation_score_raw, f"escalation_score[ticket={ticket_id}]")
-        
-        # Response scoring with sentiment awareness
-        resp_score_raw = self._score_response(response, gt_response_keywords, self._ticket)
-        resp_score = _validate_strict_score(resp_score_raw, f"response_score[ticket={ticket_id}]")
-        
-        logger.debug(f"  Component scores: cat={cat_score}, pri={pri_score}, dept={dept_score}, esc={escalation_score}, resp={resp_score}")
-        
-        # Apply task-specific weights
+        # STEP 1: Use RuleBasedGrader for component-level feedback
         if self._task == "classify":
-            weights = self.REWARD_WEIGHTS["classify"]
-            final_score = cat_score * weights["category"] + pri_score * weights["priority"]
+            breakdown = self._grader.grade_classify(
+                predicted_category=pred_category,
+                predicted_priority=pred_priority,
+                ground_truth_category=gt_dict["category"],
+                ground_truth_priority=gt_dict["priority"],
+                customer_tier=customer_tier,
+            )
         
         elif self._task == "route":
-            weights = self.REWARD_WEIGHTS["route"]
-            final_score = (
-                cat_score * weights["category"]
-                + pri_score * weights["priority"]
-                + dept_score * weights["department"]
-                + escalation_score * weights["escalation"]
+            breakdown = self._grader.grade_route(
+                predicted=action_dict,
+                ground_truth=gt_dict,
+                ticket_metadata=metadata,
             )
         
         else:  # resolve (HARD task)
-            weights = self.REWARD_WEIGHTS["resolve"]
-            final_score = (
-                cat_score * weights["category"]
-                + pri_score * weights["priority"]
-                + dept_score * weights["department"]
-                + escalation_score * weights["escalation"]
-                + resp_score * weights["response"]
+            breakdown = self._grader.grade_resolve(
+                predicted=action_dict,
+                ground_truth=gt_dict,
+                ticket_metadata=metadata,
             )
-            
-            # HARD task penalty: missing/inadequate response significantly hurts overall score
-            # Apply the penalty to the response component only.
-            if not response or len(response) < self.RESPONSE_MIN_LENGTH:
-                response_component = resp_score * weights["response"] * self.RESPONSE_LENGTH_PENALTY
-                final_score = (
-                    cat_score * weights["category"]
-                    + pri_score * weights["priority"]
-                    + dept_score * weights["department"]
-                    + escalation_score * weights["escalation"]
-                    + response_component
-                )
-                logger.debug(f"Response penalty applied: too short ({len(response)} chars, min {self.RESPONSE_MIN_LENGTH})")
         
-        final_score_raw = round(final_score, 3)
-        final_score = _validate_strict_score(final_score_raw, f"final_score[ticket={ticket_id}, task={self._task}]")
-        logger.info(f"✅ Final score for ticket {ticket_id} ({self._task}): {final_score:.4f}")
+        # STEP 2: Get final score (already clamped by RuleBasedGrader)
+        final_score = breakdown.weighted_score
         
-        # DEFENSIVE: Ensure result is strictly in (0, 1)
-        if not (0 < final_score < 1):
-            logger.critical(f"❌❌❌ CRITICAL: Final score {final_score} is NOT strictly in (0,1)!")
-            final_score = 0.5  # Emergency fallback
+        logger.info(f"✅ Grade for ticket {ticket_id} ({self._task}): {final_score:.3f}")
+        logger.debug(f"  Component breakdown: {breakdown}")
         
-        return final_score
+        # STEP 3: Validate strict bounds (Phase 2 compliance)
+        final_score = _validate_strict_score(final_score, f"final_score[ticket={ticket_id}]")
+        
+        # Return both score and detailed breakdown
+        return final_score, breakdown
     
     def _score_priority(self, predicted: str, actual: str, ticket: Dict[str, Any]) -> float:
         """Graduated priority scoring with enterprise customer awareness.
@@ -731,123 +735,115 @@ ESCALATION CRITERIA (requires_escalation=true):
         
         return _strict_unit_score(round(base_score, 2))
     
-    def _build_feedback(self, action: TicketAction, score: float) -> str:
+    def _build_feedback(self, action: TicketAction, score: float, breakdown: DetailedScoreBreakdown | None = None) -> str:
         """Build human-readable explanation of the grade with AI assistance.
         
+        Now integrates component-level feedback from RuleBasedGrader breakdown.
+        
         Includes:
-        - Category/priority/department correctness
+        - Rule-based component scores (category, priority, department, etc.)
+        - What-went-right / what-went-wrong / suggestions from breakdown
         - Escalation judgment assessment
         - Response quality feedback (if resolve task)
         - Overall quality rating
-        - AI-generated constructive feedback (if available)
         
         Used for grading transparency and debugging.
         """
         if self._ticket is None:
             raise RuntimeError("reset() must be called before step()")
         
-        # Import OpenAI integration at method level to avoid circular imports
+        # Use breakdown feedback if available, otherwise build it manually
+        if breakdown:
+            # Use the detailed feedback from rule-based grader
+            feedback_parts = []
+            
+            # Add component-level feedback
+            if breakdown.what_went_right:
+                feedback_parts.append(f"✓ {breakdown.what_went_right}")
+            
+            if breakdown.what_went_wrong:
+                feedback_parts.append(f"✗ {breakdown.what_went_wrong}")
+            
+            if breakdown.suggestions:
+                feedback_parts.append(f"💡 {breakdown.suggestions}")
+            
+            base_feedback = " | ".join(feedback_parts) if feedback_parts else f"Score: {score:.2f}"
+        else:
+            # Fallback to manual feedback building (legacy behavior)
+            gt_category = self._ticket["category"]
+            gt_priority = self._ticket["priority"]
+            gt_department = self._ticket["department"]
+            gt_escalation = self._ticket.get("requires_escalation", False)
+            
+            pred_category = (action.category or "").strip().lower()
+            pred_priority = (action.priority or "").strip().lower()
+            pred_department = (action.department or "").strip().lower()
+            
+            feedback_parts = []
+            
+            # Category feedback
+            if pred_category.lower() == gt_category.lower():
+                feedback_parts.append(f"✓ Category correct: {gt_category}")
+            else:
+                feedback_parts.append(f"✗ Category: '{action.category}' (expected '{gt_category}')")
+            
+            # Priority feedback with distance info
+            if pred_priority.lower() == gt_priority.lower():
+                feedback_parts.append(f"✓ Priority correct: {gt_priority}")
+            else:
+                try:
+                    distance = abs(
+                        self.PRIORITY_ORDER.index(pred_priority) -
+                        self.PRIORITY_ORDER.index(gt_priority)
+                    )
+                    if distance == 1:
+                        feedback_parts.append(f"~ Priority close: '{action.priority}' vs '{gt_priority}' (1 step)")
+                    else:
+                        feedback_parts.append(f"✗ Priority: '{action.priority}' (expected '{gt_priority}')")
+                except ValueError:
+                    feedback_parts.append(f"✗ Priority: invalid '{action.priority}' (expected '{gt_priority}')")
+            
+            # Department feedback (if task requires it)
+            if self._task in ["route", "resolve"]:
+                if pred_department.lower() == gt_department.lower():
+                    feedback_parts.append(f"✓ Department correct: {gt_department}")
+                else:
+                    feedback_parts.append(f"✗ Department: '{action.department}' (expected '{gt_department}')")
+            
+            # Escalation feedback (if task requires it)
+            if self._task in ["route", "resolve"]:
+                if action.requires_escalation == gt_escalation:
+                    feedback_parts.append(f"✓ Escalation judgment correct: {gt_escalation}")
+                else:
+                    feedback_parts.append(f"✗ Escalation: {action.requires_escalation} (expected {gt_escalation})")
+            
+            # Overall score context
+            if score >= 0.9:
+                quality = "Excellent"
+            elif score >= 0.7:
+                quality = "Good"
+            elif score >= 0.5:
+                quality = "Partial"
+            else:
+                quality = "Needs improvement"
+            
+            base_feedback = f"{' | '.join(feedback_parts)} | Score: {quality} ({score:.2f})"
+        
+        # Optionally add AI-generated constructive feedback
         try:
             from .openai_integration import get_openai_integration
             openai = get_openai_integration()
+            if openai and openai.enabled and self._ticket:
+                try:
+                    ai_feedback = openai.generate_feedback(
+                        score=score,
+                        action_type=self._task,
+                        context=f"Ticket: {self._ticket.get('subject', '')}"
+                    )
+                    base_feedback += f" | AI: {ai_feedback}"
+                except Exception as e:
+                    logger.debug(f"OpenAI feedback unavailable: {e}")
         except ImportError:
-            openai = None
-        
-        gt_category = self._ticket["category"]
-        gt_priority = self._ticket["priority"]
-        gt_department = self._ticket["department"]
-        gt_escalation = self._ticket.get("requires_escalation", False)
-        
-        pred_category = (action.category or "").strip().lower()
-        pred_priority = (action.priority or "").strip().lower()
-        pred_department = (action.department or "").strip().lower()
-        
-        feedback_parts = []
-        
-        # Category feedback
-        if pred_category.lower() == gt_category.lower():
-            feedback_parts.append(f"✓ Category correct: {gt_category}")
-        else:
-            feedback_parts.append(f"✗ Category: '{action.category}' (expected '{gt_category}')")
-        
-        # Priority feedback with distance info
-        if pred_priority.lower() == gt_priority.lower():
-            feedback_parts.append(f"✓ Priority correct: {gt_priority}")
-        else:
-            try:
-                distance = abs(
-                    self.PRIORITY_ORDER.index(pred_priority) -
-                    self.PRIORITY_ORDER.index(gt_priority)
-                )
-                if distance == 1:
-                    feedback_parts.append(f"~ Priority close: '{action.priority}' vs '{gt_priority}' (1 step)")
-                else:
-                    feedback_parts.append(f"✗ Priority: '{action.priority}' (expected '{gt_priority}')")
-            except ValueError:
-                feedback_parts.append(f"✗ Priority: invalid '{action.priority}' (expected '{gt_priority}')")
-        
-        # Department feedback (if task requires it)
-        if self._task in ["route", "resolve"]:
-            if pred_department.lower() == gt_department.lower():
-                feedback_parts.append(f"✓ Department correct: {gt_department}")
-            else:
-                feedback_parts.append(f"✗ Department: '{action.department}' (expected '{gt_department}')")
-        
-        # Escalation feedback (if task requires it)
-        if self._task in ["route", "resolve"]:
-            if action.requires_escalation == gt_escalation:
-                feedback_parts.append(f"✓ Escalation judgment correct: {gt_escalation}")
-            else:
-                feedback_parts.append(f"✗ Escalation: {action.requires_escalation} (expected {gt_escalation})")
-        
-        # Response feedback (if task requires it)
-        if self._task == "resolve":
-            if self._ticket is None:
-                raise RuntimeError("reset() must be called before step()")
-            gt_keywords = self._ticket.get("response_keywords", [])
-            response_text = (action.response or "").strip()
-            
-            # Check if response is too short
-            if not response_text or len(response_text) < 20:
-                feedback_parts.append(f"✗ Response required for HARD task (PENALTY: -50% for incomplete resolve)")
-            else:
-                response_lower = response_text.lower()
-                response_terms = {
-                    variant
-                    for token in re.findall(r"\b\w+\b", response_lower)
-                    for variant in _term_variants(token)
-                }
-
-                found = [kw for kw in gt_keywords if _term_variants(kw) & response_terms]
-                
-                missing = [kw for kw in gt_keywords if kw not in found]
-                feedback_parts.append(
-                    f"Response: {len(found)}/{len(gt_keywords)} keywords found. Missing: {missing if missing else 'none'}"
-                )
-        
-        # Overall score context
-        if score >= 0.9:
-            quality = "Excellent"
-        elif score >= 0.7:
-            quality = "Good"
-        elif score >= 0.5:
-            quality = "Partial"
-        else:
-            quality = "Needs improvement"
-        
-        base_feedback = f"{' | '.join(feedback_parts)} | Score: {quality} ({score:.2f})"
-        
-        # Add AI-generated constructive feedback if available
-        if openai and openai.enabled and self._ticket:
-            try:
-                ai_feedback = openai.generate_feedback(
-                    score=score,
-                    action_type=self._task,
-                    context=f"Ticket: {self._ticket.get('subject', '')}"
-                )
-                base_feedback += f" | AI: {ai_feedback}"
-            except Exception as e:
-                logger.debug(f"AI feedback generation failed: {e}")
-                # Silently fail - feedback still returns base content
+            pass  # OpenAI integration not available
         
         return base_feedback
