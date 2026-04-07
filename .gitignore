@@ -59,3 +59,4 @@ htmlcov/
 /space_*.txt
 /validate_*.log
 /wsl_status.txt
+.hf_deploy_tmp/
