@@ -15,20 +15,38 @@ Endpoints:
 
 from __future__ import annotations
 
+import sys
+print("=" * 80, flush=True)
+print("[APP-LOAD-START] customer_support_env/server/app.py loading...", flush=True)
+print("=" * 80, flush=True)
+sys.stdout.flush()
+sys.stderr.flush()
+
 import logging
 import uuid
 from typing import Dict, Literal, Optional, Tuple
+
+print("[APP-IMPORTS] Importing FastAPI...", flush=True)
+sys.stdout.flush()
 
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+print("[APP-IMPORTS] Importing environment...", flush=True)
+sys.stdout.flush()
+
 from ..environment import CustomerSupportEnvironment
 from ..models import TicketAction, TicketObservation
 
+print("[APP-IMPORTS] All imports successful OK", flush=True)
+sys.stdout.flush()
+sys.stderr.flush()
+
 logger = logging.getLogger(__name__)
 
-print("🔧 [STARTUP] Initializing FastAPI app...", flush=True)
+print("[STARTUP] Initializing FastAPI app...", flush=True)
+sys.stdout.flush()
 
 app = FastAPI(
     title="Customer Support RL Environment",
@@ -36,20 +54,21 @@ app = FastAPI(
     version="0.1.0",
 )
 
-print("🔧 [STARTUP] FastAPI app created", flush=True)
+print("[STARTUP] FastAPI app created OK", flush=True)
+sys.stdout.flush()
 
 # Startup and shutdown event handlers for debugging
 @app.on_event("startup")
 async def startup_event():
-    print("✅ [STARTUP] Application startup event triggered", flush=True)
+    print("[STARTUP] Application startup event triggered", flush=True)
     logger.info("Application startup event triggered")
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    print("❌ [SHUTDOWN] Application shutting down", flush=True)
+    print("[SHUTDOWN] Application shutting down", flush=True)
     logger.info("Application shutting down")
 
-print("🔧 [STARTUP] Event handlers registered", flush=True)
+print("[STARTUP] Event handlers registered", flush=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Session store  (in-memory; scoped per container instance)
