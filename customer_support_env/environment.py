@@ -434,7 +434,7 @@ ESCALATION CRITERIA (requires_escalation=true):
         logger.debug(f"  Ground truth: category={gt_category}, priority={gt_priority}, dept={gt_department}, escalation={gt_escalation}")
         
         # Score each component
-        cat_score = 1.0 if category == gt_category else 0.0
+        cat_score = _strict_unit_score(1.0 if category == gt_category else 0.0)
         
         # Priority scoring with enterprise penalty
         pri_score = self._score_priority(priority, gt_priority, self._ticket)
@@ -530,11 +530,12 @@ ESCALATION CRITERIA (requires_escalation=true):
                 base_score *= self.SLA_PENALTY_MULTIPLIER
             
             logger.debug(f"Priority score: {base_score} (predicted={predicted}, actual={actual}, distance={distance})")
-            return round(base_score, 2)
+            clamped = _strict_unit_score(round(base_score, 2))
+            return clamped
         
         except ValueError:
             # Predicted priority not in valid list
-            return 0.0
+            return _strict_unit_score(0.0)
     
     def _score_department(self, predicted: str, actual: str) -> float:
         """Department routing score with fallback logic.
@@ -553,21 +554,21 @@ ESCALATION CRITERIA (requires_escalation=true):
             return 0.0
         
         if predicted == actual:
-            return self.DEPARTMENT_EXACT_SCORE
+            return _strict_unit_score(self.DEPARTMENT_EXACT_SCORE)
         
         # Reasonable fallback: tier1 instead of tier2
         if predicted == "tier1" and actual == "tier2":
-            return self.DEPARTMENT_FALLBACK_SCORE
+            return _strict_unit_score(self.DEPARTMENT_FALLBACK_SCORE)
 
         # Reasonable technical fallback between tier2 triage and engineering.
         if (predicted == "tier2" and actual == "engineering") or (
             predicted == "engineering" and actual == "tier2"
         ):
-            return self.DEPARTMENT_FALLBACK_SCORE
+            return _strict_unit_score(self.DEPARTMENT_FALLBACK_SCORE)
         
         # No fallback credit otherwise
         logger.debug(f"Department score: 0.0 (predicted={predicted}, actual={actual}, no fallback)")
-        return 0.0
+        return _strict_unit_score(0.0)
     
     def _score_escalation(self, predicted: bool | None, actual: bool) -> float:
         """Escalation judgment score.
@@ -582,7 +583,7 @@ ESCALATION CRITERIA (requires_escalation=true):
             # Agent omitted field - treat as False (no escalation)
             predicted = False
         
-        return 1.0 if predicted == actual else 0.0
+        return _strict_unit_score(1.0 if predicted == actual else 0.0)
     
     def _score_response(self, response_text: str, required_keywords: list, ticket: Dict[str, Any]) -> float:
         """Score response quality by keyword presence with sentiment awareness.
@@ -601,7 +602,7 @@ ESCALATION CRITERIA (requires_escalation=true):
             0.0 if too few keywords
         """
         if not required_keywords:
-            return 1.0  # No keywords required, return full credit
+            return _strict_unit_score(1.0)  # No keywords required, return full credit
         
         response_lower = response_text.lower()
         response_terms = {
@@ -630,7 +631,7 @@ ESCALATION CRITERIA (requires_escalation=true):
             base_score = 0.2
         else:
             logger.debug(f"Response insufficient keywords: {found_count}/{len(required_keywords)} (threshold={threshold})")
-            return 0.0  # Too few keywords
+            return _strict_unit_score(0.0)  # Too few keywords
 
         # Actionability requirement: concrete next-step phrasing should be present.
         action_phrases = ["we will", "next steps", "please", "within", "today", "hours", "days"]
@@ -655,7 +656,7 @@ ESCALATION CRITERIA (requires_escalation=true):
             base_score = min(1.0, base_score + self.SENTIMENT_EMPATHY_BONUS)  # Bonus for emotional intelligence
             logger.debug(f"Empathy bonus applied: +{self.SENTIMENT_EMPATHY_BONUS}")
         
-        return round(base_score, 2)
+        return _strict_unit_score(round(base_score, 2))
     
     def _build_feedback(self, action: TicketAction, score: float) -> str:
         """Build human-readable explanation of the grade.
