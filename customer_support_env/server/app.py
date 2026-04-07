@@ -260,6 +260,9 @@ async def step(req: StepRequest):
         obs_dict.pop("reward", None)
         obs_dict.pop("done", None)
         _sessions[req.session_id] = (env, obs)
+        # Phase 2: reward must be strictly in (0, 1) — final defensive clamp
+        _EPS = 0.001
+        reward = round(max(_EPS, min(1.0 - _EPS, float(reward))), 4)
         logger.debug("step session=%s reward=%.3f", req.session_id, reward)
         return {"observation": obs_dict, "reward": reward, "done": done, "info": info}
     except ValueError as exc:

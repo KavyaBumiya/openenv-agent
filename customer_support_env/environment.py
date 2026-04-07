@@ -452,7 +452,9 @@ ESCALATION CRITERIA (requires_escalation=true):
         
         # Comprehensive validation of all components
         # Phase 2 requirement: ALL numeric values must be strictly in (0, 1)
-        value = _validate_strict_score(final_reward_raw, "reward_value")
+        _EPS = 0.001
+        final_value = round(max(_EPS, min(1.0 - _EPS, float(final_reward_raw))), 4)
+        value = _validate_strict_score(final_value, "reward_value")
         raw_score_clamped = _validate_strict_score(raw_score, "raw_score_component")
         progress_gain_clamped = _validate_strict_score(progress_gain, "progress_gain")
         step_penalty_clamped = _validate_strict_score(step_penalty, "extra_step_penalty")

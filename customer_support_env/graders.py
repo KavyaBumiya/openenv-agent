@@ -81,6 +81,10 @@ class ClassifyGrader:
             logger.warning(f"ClassifyGrader error: {e}, using fallback")
             score = 0.5
         
+        # Phase 2: final defensive clamp before return
+        _EPS = 0.001
+        score = round(max(_EPS, min(1.0 - _EPS, float(score))), 4)
+        
         return {
             "score": score,
             "category_correct": True,
@@ -127,6 +131,10 @@ class RouteGrader:
         except Exception as e:
             logger.warning(f"RouteGrader error: {e}, using fallback")
             score = 0.5
+        
+        # Phase 2: final defensive clamp before return
+        _EPS = 0.001
+        score = round(max(_EPS, min(1.0 - _EPS, float(score))), 4)
         
         return {
             "score": score,
@@ -183,6 +191,11 @@ class ResolveGrader:
             logger.warning(f"ResolveGrader error: {e}, using fallback")
             score = 0.5
             response_quality = 0.5
+        
+        # Phase 2: final defensive clamp before return
+        _EPS = 0.001
+        score = round(max(_EPS, min(1.0 - _EPS, float(score))), 4)
+        response_quality = round(max(_EPS, min(1.0 - _EPS, float(response_quality))), 4)
         
         return {
             "score": score,
