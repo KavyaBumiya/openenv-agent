@@ -24,6 +24,7 @@ sys.stderr.flush()
 
 import logging
 import uuid
+from contextlib import asynccontextmanager
 from typing import Dict, Literal, Optional, Tuple
 
 print("[APP-IMPORTS] Importing FastAPI...", flush=True)
@@ -49,10 +50,22 @@ logger = logging.getLogger(__name__)
 print("[STARTUP] Initializing FastAPI app...", flush=True)
 sys.stdout.flush()
 
+# Define lifespan context manager for app startup/shutdown
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    print("[STARTUP] Application startup event triggered", flush=True)
+    logger.info("Application startup event triggered")
+    yield
+    # Shutdown
+    print("[SHUTDOWN] Application shutting down", flush=True)
+    logger.info("Application shutting down")
+
 app = FastAPI(
     title="Customer Support RL Environment",
     description="OpenEnv-compliant customer-support ticket triage environment.",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # Register OpenAI-powered endpoints
@@ -60,17 +73,6 @@ app.include_router(openai_router)
 
 print("[STARTUP] FastAPI app created OK", flush=True)
 sys.stdout.flush()
-
-# Startup and shutdown event handlers for debugging
-@app.on_event("startup")
-async def startup_event():
-    print("[STARTUP] Application startup event triggered", flush=True)
-    logger.info("Application startup event triggered")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    print("[SHUTDOWN] Application shutting down", flush=True)
-    logger.info("Application shutting down")
 
 print("[STARTUP] Event handlers registered", flush=True)
 
