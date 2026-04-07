@@ -9,18 +9,22 @@ OpenAI-compatible client.
 Required environment variables:
     API_BASE_URL      LLM endpoint  (default: https://router.huggingface.co/v1)
     MODEL_NAME        Model name    (default: meta-llama/Llama-3.1-8B-Instruct)
-    HF_TOKEN          API token
+    HF_TOKEN          API token (or OPENAI_API_KEY for OpenAI direct)
 
 Optional:
-    ENV_BASE_URL   Deployed environment URL
-                                 (default: http://localhost:7860 — for local docker testing)
-    BASELINE_OUTPUT_PATH   JSON path for deterministic score summary
-                                                 (default: baseline_scores.json)
-    LOCAL_IMAGE_NAME   Preserved for compatibility with the submission harness
+    OPENAI_API_KEY    OpenAI API key (validators will inject this)
+    ENV_BASE_URL      Deployed environment URL (default: http://localhost:7860)
+    BASELINE_OUTPUT_PATH   JSON path for baseline scores (default: baseline_scores.json)
+    LOCAL_IMAGE_NAME      Preserved for submission harness compatibility
 
 Usage:
     export HF_TOKEN="..."
-  python inference.py
+    export OPENAI_API_KEY="sk-..."  # optional for local testing
+    python inference.py
+
+Note:
+    During validator testing, OPENAI_API_KEY will be injected automatically.
+    This script gracefully handles missing API keys with fallback behavior.
 """
 
 import json

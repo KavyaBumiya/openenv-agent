@@ -34,6 +34,16 @@ jobs:
           fi
           echo "✓ HF_TOKEN is configured"
 
+      - name: Check OPENAI API key
+        run: |
+          if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
+            echo "⚠️  OPENAI_API_KEY secret not set (optional for local testing)"
+            echo "   Validators will inject their own key during submission review"
+            echo "   To test locally: set OPENAI_API_KEY in GitHub Secrets"
+          else
+            echo "✓ OPENAI_API_KEY is configured"
+          fi
+
       - name: Push to Hugging Face Spaces
         run: |
           python -m pip install --upgrade pip
@@ -74,6 +84,11 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || '' }}
           REPO_ID: ${{ env.REPO_ID }}
+          REPO_TYPE: ${{ env.REPO_TYPE }}
+          GIT_AUTHOR_NAME: github-actions
+          GIT_AUTHOR_EMAIL: github-actions@github.com
+          GIT_COMMITTER_NAME: github-actions
+          GIT_COMMITTER_EMAIL: github-actions@github.com
           REPO_TYPE: ${{ env.REPO_TYPE }}
           GIT_AUTHOR_NAME: github-actions
           GIT_AUTHOR_EMAIL: github-actions@github.com
