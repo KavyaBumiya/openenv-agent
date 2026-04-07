@@ -7,6 +7,10 @@ websockets==15.0.1
 # LLM — OpenAI client (works with HF router and other OpenAI-compatible endpoints)
 openai==2.7.2
 
+# Semantic evaluation for response quality
+sentence-transformers==2.2.2
+torch>=2.0.0
+
 # HTTP requests for inference script (calling deployed API)
 httpx==0.25.2
 
