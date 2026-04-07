@@ -10,7 +10,7 @@ environment_type: rl
 episode_type: multi-turn
 
 tasks:
-  - name: classify
+  - id: classify
     grader: customer_support_env.graders:ClassifyGrader
     description: >
       Classify ticket into category (billing/technical/account/general/shipping)
@@ -38,7 +38,7 @@ tasks:
       - action_schema
       - policy_excerpt
 
-  - name: route
+  - id: route
     grader: customer_support_env.graders:RouteGrader
     description: >
       Classify a ticket and route it to the right department
@@ -74,7 +74,7 @@ tasks:
       - action_schema
       - policy_excerpt
 
-  - name: resolve
+  - id: resolve
     grader: customer_support_env.graders:ResolveGrader
     description: >
       Classify, prioritize, route a ticket, then draft a professional
