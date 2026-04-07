@@ -137,20 +137,20 @@ async def get_tasks():
 async def get_grader():
     return {
         "type": "shaped",
-        "range": [0.0, 1.0],
+        "range": [0.001, 0.999],
         "tasks": {
             "classify": {
                 "weights": {"category": 0.6, "priority": 0.4},
                 "notes": {
-                    "category": "Binary — exact match only.",
-                    "priority": "Graduated — 1.0 exact, 0.6 one step off, 0.2 two steps off.",
+                    "category": "Binary — exact match only, then clamped to (0, 1).",
+                    "priority": "Graduated — exact, one step off, and two steps off are clamped to (0, 1).",
                 },
             },
             "route": {
                 "weights": {"category": 0.35, "priority": 0.25, "department": 0.25, "escalation": 0.15},
                 "notes": {
-                    "department": "Partial credit (0.4) for tier1→tier2 or tier2↔engineering.",
-                    "escalation": "Binary.",
+                    "department": "Partial credit is clamped to (0, 1).",
+                    "escalation": "Binary, then clamped to (0, 1).",
                 },
             },
             "resolve": {
@@ -159,7 +159,7 @@ async def get_grader():
                     "response": (
                         "Keyword coverage (at least half, with minimum 3 when applicable). "
                         "+0.1 empathy bonus for frustrated customers. "
-                        "-0.1 if no actionable next-step phrases."
+                        "Final score is clamped to (0, 1)."
                     ),
                 },
             },

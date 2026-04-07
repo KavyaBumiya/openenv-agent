@@ -50,6 +50,7 @@ MAX_STEPS       = 5
 TEMPERATURE     = 0.0
 MAX_TOKENS      = 512
 SUCCESS_THRESH  = 0.5      # episode counted as success if normalized score >= this
+STRICT_SCORE_EPSILON = 0.001
 
 # ---------------------------------------------------------------------------
 # Validate credentials early
@@ -94,8 +95,12 @@ def _sanitize_single_line(value: Optional[str]) -> str:
 def _episode_score(rewards: List[float]) -> float:
     """Return a normalized per-episode score in [0, 1]."""
     if not rewards:
-        return 0.0
-    return max(0.0, min(1.0, sum(rewards)))
+        return STRICT_SCORE_EPSILON
+    return round(min(1.0 - STRICT_SCORE_EPSILON, max(STRICT_SCORE_EPSILON, sum(rewards))), 4)
+
+
+def _strict_summary_score(value: float) -> float:
+    return round(min(1.0 - STRICT_SCORE_EPSILON, max(STRICT_SCORE_EPSILON, value)), 4)
 
 # ---------------------------------------------------------------------------
 # Environment HTTP client
@@ -391,8 +396,8 @@ def main() -> None:
         task_scores = results[task]
         mean_score = (sum(task_scores) / len(task_scores)) if task_scores else 0.0
         summary["task_scores"][task] = {
-            "mean_episode_score": round(mean_score, 4),
-            "episode_rewards": [round(v, 4) for v in task_scores],
+            "mean_episode_score": _strict_summary_score(mean_score),
+            "episode_rewards": [_strict_summary_score(v) for v in task_scores],
         }
         print(
             f"task={task} episodes={len(task_scores)} mean_episode_score={mean_score:.3f} "
@@ -402,9 +407,8 @@ def main() -> None:
         )
 
     overall_scores = [score for task_scores in results.values() for score in task_scores]
-    summary["overall_mean_episode_score"] = round(
+    summary["overall_mean_episode_score"] = _strict_summary_score(
         (sum(overall_scores) / len(overall_scores)) if overall_scores else 0.0,
-        4,
     )
 
     with open(BASELINE_OUTPUT_PATH, "w", encoding="utf-8") as fp:

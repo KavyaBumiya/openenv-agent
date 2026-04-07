@@ -14,6 +14,13 @@ from .data import TICKETS
 # Configure logging
 logger = logging.getLogger(__name__)
 
+_STRICT_SCORE_EPSILON = 0.001
+
+
+def _strict_unit_score(value: float) -> float:
+    """Clamp a score to the open interval (0, 1) with stable rounding."""
+    return round(min(1.0 - _STRICT_SCORE_EPSILON, max(_STRICT_SCORE_EPSILON, value)), 3)
+
 
 def _term_variants(term: str) -> set[str]:
     """Generate normalized variants of a term for keyword matching.
@@ -370,9 +377,9 @@ ESCALATION CRITERIA (requires_escalation=true):
         progress_gain = max(0.0, raw_score - prev_best)
         step_penalty = self.EXTRA_STEP_PENALTY * max(0, self._state.step_count - 1)
         loop_penalty = self.LOOP_PENALTY if self._action_signature(action) in self._state.action_history else 0.0
-        final_reward = max(0.0, progress_gain - step_penalty - loop_penalty)
+        final_reward = _strict_unit_score(max(0.0, progress_gain - step_penalty - loop_penalty))
         return TicketReward(
-            value=round(min(1.0, final_reward), 3),
+            value=final_reward,
             raw_score=round(raw_score, 3),
             progress_gain=round(progress_gain, 3),
             repeated_action_penalty=round(loop_penalty, 3),
@@ -480,7 +487,7 @@ ESCALATION CRITERIA (requires_escalation=true):
                 )
                 logger.debug(f"Response penalty applied: too short ({len(response)} chars, min {self.RESPONSE_MIN_LENGTH})")
         
-        final_score = round(final_score, 3)
+        final_score = _strict_unit_score(round(final_score, 3))
         logger.info(f"Final score for ticket {ticket_id}: {final_score:.3f} (task={self._task})")
         
         return final_score
