@@ -23,24 +23,23 @@ def _validate_strict_score(score: float, label: str = "score") -> float:
     """Validate and clamp a score to be strictly in (0, 1).
     
     Ensures NO score escapes unclamped - critical for Phase 2 validation.
+    Includes post-rounding guard to prevent boundary violations.
     """
     if not isinstance(score, (int, float)):
         return _STRICT_SCORE_EPSILON
     
-    if score != score:  # NaN check
+    if score != score or score in (float('inf'), float('-inf')):
         return _STRICT_SCORE_EPSILON
     
-    if score == float('inf') or score == float('-inf'):
-        return _STRICT_SCORE_EPSILON
+    # Clamp to strict bounds, then round
+    result = min(1.0 - _STRICT_SCORE_EPSILON, max(_STRICT_SCORE_EPSILON, float(score)))
+    result = round(result, 4)
     
-    # Clamp to strict bounds: [0.001, 0.999]
-    clamped = round(min(1.0 - _STRICT_SCORE_EPSILON, max(_STRICT_SCORE_EPSILON, score)), 4)
-    
-    # Emergency fallback if clamping failed
-    if clamped <= 0.0 or clamped >= 1.0:
+    # Hard guard after rounding: check if rounding produced exact boundary
+    if result <= 0.0 or result >= 1.0:
         return 0.5
     
-    return clamped
+    return result
 
 
 class ClassifyGrader:

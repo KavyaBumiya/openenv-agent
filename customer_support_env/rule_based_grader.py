@@ -23,8 +23,18 @@ _STRICT_SCORE_EPSILON = 0.001
 
 
 def _strict_unit_score(value: float) -> float:
-    """Clamp a score to the open interval (0, 1) with stable rounding."""
-    return round(min(1.0 - _STRICT_SCORE_EPSILON, max(_STRICT_SCORE_EPSILON, value)), 3)
+    """Clamp a score to the open interval (0, 1) — never exactly 0.0 or 1.0.
+    
+    Prevents rounding from producing exact boundaries.
+    """
+    clamped = min(1.0 - _STRICT_SCORE_EPSILON, max(_STRICT_SCORE_EPSILON, float(value)))
+    result = round(clamped, 4)
+    # Guard against float rounding producing exact boundary
+    if result <= 0.0:
+        return _STRICT_SCORE_EPSILON
+    if result >= 1.0:
+        return 1.0 - _STRICT_SCORE_EPSILON
+    return result
 
 
 class ScoreComponent(BaseModel):
