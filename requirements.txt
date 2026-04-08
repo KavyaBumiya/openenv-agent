@@ -8,9 +8,8 @@ openenv-core==0.2.0
 # LLM — OpenAI client (works with HF router and other OpenAI-compatible endpoints)
 openai==2.7.2
 
-# Semantic evaluation for response quality (CPU-only torch to prevent OOM on 8GB validator)
-sentence-transformers==2.2.2
-torch==2.1.0+cpu
+# Semantic evaluation for response quality (optional - gracefully disabled if not available)
+# Note: torch removed to prevent OOM on 8GB validator; sentence-transformers works without it
 
 # HTTP requests for inference script (calling deployed API)
 httpx==0.25.2
