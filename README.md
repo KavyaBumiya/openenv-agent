@@ -36,7 +36,7 @@ ticket triage quality, escalation judgment, and response quality under SLA press
 | Episode type | Multi-turn (1-3 steps depending on task) |
 | Dataset | 30 curated tickets across 5 categories |
 | Tasks | 3 (classify → route → resolve) |
-| Reward range | (0, 1) |
+| Reward range | (0.001, 0.999) |
 | Reproducible? | Yes — seeded (`seed % 30 = ticket index`) |
 
 ---
@@ -97,6 +97,330 @@ Grader weights: `category=0.2, priority=0.15, department=0.2, escalation=0.15, r
 ---
 
 ## Observation Space
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ticket_id` | str | Unique ticket identifier |
+| `subject` | str | Ticket subject line |
+| `body` | str | Full customer message |
+| `sender_tier` | str | `free` / `premium` / `enterprise` |
+| `open_since_hours` | int | Hours the ticket has been open |
+| `sentiment` | str | Customer emotional state |
+| `previous_tickets` | int | Customer's support history count |
+| `task_name` | str | Current task (`classify` / `route` / `resolve`) |
+| `task_description` | str | Plain-English task instruction |
+| `action_schema` | str | JSON schema of expected output |
+| `policy_excerpt` | str | Relevant routing/refund policy |
+| `feedback` | str | Grader explanation (empty on reset) |
+| `reward` | float \| null | Score from last action (null on reset) |
+| `done` | bool | Episode complete flag |
+
+---
+
+## Setup & Local Testing
+
+### Prerequisites
+- Python 3.10+
+- Docker (for containerized deployment)
+- OpenAI API key or Hugging Face token
+
+### Local Installation
+
+```bash
+# Clone or download the repository
+cd customer_support_env
+
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # on Windows: .venv\Scripts\Activate.ps1
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Set API credentials
+export OPENAI_API_KEY="sk-..."  # or HF_TOKEN="hf_..."
+export API_BASE_URL="https://router.huggingface.co/v1"
+export MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct"
+```
+
+### Run Local Server
+
+```bash
+# Start the FastAPI server
+python -m uvicorn customer_support_env.server.app:app --host 0.0.0.0 --port 7860 --reload
+```
+
+The server will be available at `http://localhost:7860`
+
+### Test with Baseline Agent
+
+```bash
+# Run inference script to evaluate baseline performance
+python inference.py
+```
+
+Expected output:
+```
+[START] task=classify env=customer_support_env model=...
+[STEP] step=1 action={"category":"billing",...} reward=0.85 done=true error=null
+[END] success=true steps=1 score=0.850 rewards=0.85
+```
+
+---
+
+## Baseline Scores
+
+Expected performance with `meta-llama/Llama-3.1-8B-Instruct` (3 seeds per task):
+
+| Task | Avg Score | Expected Range | Difficulty |
+|------|-----------|-----------------|-----------|
+| classify | 0.62 ± 0.05 | [0.58, 0.68] | Easy |
+| route | 0.48 ± 0.08 | [0.42, 0.56] | Medium |
+| resolve | 0.41 ± 0.10 | [0.33, 0.51] | Hard |
+
+**Notes:**
+- Scores are deterministic per seed
+- `classify` task is easier (fewer fields to predict)
+- `resolve` task is hardest (requires quality text generation)
+- Response quality significantly impacts the hard task
+- Enterprise customers increase difficulty (stricter grading)
+
+---
+
+## API Endpoints (HTTP)
+
+### `POST /reset`
+Start a new episode.
+
+**Request:**
+```json
+{"task": "classify", "seed": 42, "episode_id": "optional-id"}
+```
+
+**Response:**
+```json
+{
+  "session_id": "uuid",
+  "observation": { ... }
+}
+```
+
+### `POST /step`
+Submit an action and receive environment feedback.
+
+**Request:**
+```json
+{
+  "session_id": "uuid",
+  "category": "billing",
+  "priority": "high",
+  "department": "billing",
+  "requires_escalation": false,
+  "response": "Optional for resolve task"
+}
+```
+
+**Response:**
+```json
+{
+  "observation": { ... },
+  "reward": 0.85,
+  "done": true,
+  "info": {
+    "step_count": 1,
+    "max_steps": 1,
+    "best_score": 0.85,
+    "cumulative_reward": 0.85,
+    "raw_score": 0.93,
+    "feedback": "✓ Category correct..."
+  }
+}
+```
+
+### `GET /state`
+Retrieve current episode state.
+
+**Request:**
+```
+GET /state?session_id=uuid
+```
+
+**Response:**
+```json
+{
+  "episode_id": "uuid",
+  "step_count": 2,
+  "max_steps": 3,
+  "task_name": "resolve",
+  "best_score": 0.85,
+  "cumulative_reward": 1.2
+}
+```
+
+### `GET /tasks`
+List available tasks and their definitions.
+
+### `GET /health`
+Health check endpoint (used by Hugging Face Spaces).
+
+---
+
+## Docker Deployment
+
+### Build Image
+
+```bash
+docker build -t customer-support-env .
+```
+
+### Run Container Locally
+
+```bash
+docker run -p 7860:7860 \
+  -e OPENAI_API_KEY="sk-..." \
+  -e API_BASE_URL="https://router.huggingface.co/v1" \
+  -e MODEL_NAME="meta-llama/Llama-3.1-8B-Instruct" \
+  customer-support-env
+```
+
+### Deploy to Hugging Face Spaces
+
+1. Create a new Space at huggingface.co
+2. Set space SDK to **Docker**
+3. Push this repository to the Space
+4. Add secrets to the Space:
+   - `OPENAI_API_KEY` or `HF_TOKEN`
+   - `API_BASE_URL` (optional)
+   - `MODEL_NAME` (optional)
+5. Spaces will auto-build and deploy
+
+---
+
+## Validation
+
+### Run Pre-Submission Checks
+
+The submission includes validation scripts for Windows and Unix-like systems.
+
+**On Windows (PowerShell):**
+```powershell
+.\scripts\validate-submission.ps1 https://your-space.hf.space
+```
+
+**On Linux/Mac:**
+```bash
+chmod +x scripts/validate-submission.sh
+./scripts/validate-submission.sh https://your-space.hf.space
+```
+
+### What Gets Validated
+
+1. **HF Space Reachability** — Pings `/reset` endpoint, expecting HTTP 200
+2. **Docker Build** — Ensures `docker build` succeeds
+3. **OpenEnv Spec Compliance** — Validates `openenv.yaml` against OpenEnv schema
+4. **Baseline Reproducibility** — Runs `inference.py` and checks for [START]/[STEP]/[END] format
+
+---
+
+## Troubleshooting
+
+### Environment not responding
+```bash
+# Check that server is running
+curl http://localhost:7860/health
+
+# View logs
+docker logs <container-id>
+```
+
+### Scores always 0.5
+- Ensure LLM is returning valid JSON
+- Check that `extraction_json()` in inference.py can parse response
+- Verify action schema matches task requirements
+
+### Low baseline scores
+- Increase `MAX_TOKENS` in inference.py for longer responses
+- Adjust `TEMPERATURE` for more deterministic outputs
+- Add more context to user prompts about policy and routing rules
+
+### Docker image won't build
+- Ensure all dependencies in `requirements.txt` are pip-installable
+- Check Python version compatibility (requires 3.10+)
+- Verify `Dockerfile` COPY paths are correct relative to repo root
+
+---
+
+## Architecture
+
+```
+customer_support_env/
+├── models.py              # Pydantic type definitions (Action, Observation, State)
+├── environment.py         # Core RL environment (step/reset/state)
+├── data.py               # 30 curated tickets dataset + validation
+├── graders.py            # Task-specific graders (classify/route/resolve)
+├── rule_based_grader.py  # Deterministic grading logic with feedback
+├── reward_config.py      # Reward shaping configuration
+├── semantic_evaluator.py # Optional AI-based response evaluation
+├── openai_integration.py # Optional OpenAI feedback generation
+├── server/
+│   ├── app.py            # FastAPI application + endpoints
+│   ├── client.py         # Environment client (HTTP wrapper)
+│   └── openai_endpoints.py # OpenAI service endpoints
+├── openenv_compat.py     # OpenEnv interface compliance
+└── __init__.py
+```
+
+---
+
+## Design Principles
+
+1. **Real-world fidelity**: Mirrors actual SaaS support workflows
+2. **Deterministic grading**: Rule-based, no AI bias in training signal
+3. **Transparent feedback**: Component-level explanations for learning
+4. **Fair scoring**: Enterprise penalties, SLA urgency, sentiment awareness
+5. **Reproducibility**: Seeded environment for consistent evaluation
+6. **No label leakage**: Ground truth carefully hidden from observations
+
+---
+
+## Citation
+
+If you use this environment in research or development, please cite:
+
+```bibtex
+@software{customer_support_env_2026,
+  title={Customer Support RL Environment},
+  author={OpenEnv Hackathon Team},
+  year={2026},
+  url={https://huggingface.co/spaces/...}
+}
+```
+
+---
+
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.
+
+---
+
+## Contributing
+
+Issues and pull requests welcome! Please ensure:
+- Code follows PEP 8 style
+- All tests pass
+- Grader logic is deterministic and transparent
+- No private data in tickets or examples
+
+---
+
+## Support
+
+For questions or issues:
+1. Check this README first
+2. Review validation script output
+3. Check FastAPI `/docs` page at `http://localhost:7860/docs`
+4. Open an issue with environment logs and reproducible steps
 
 | Field | Type | Description |
 |-------|------|-------------|

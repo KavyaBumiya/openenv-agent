@@ -9,7 +9,7 @@ from typing import Dict, Any
 from .openenv_compat import Environment
 
 from .models import StepInfo, TicketAction, TicketObservation, TicketReward, TicketState
-from .data import TICKETS
+from .data import TICKET_DATA, get_ticket_labels
 from .rule_based_grader import RuleBasedGrader, DetailedScoreBreakdown
 from .reward_config import RewardConfig
 from .curriculum_manager import CurriculumManager
@@ -284,24 +284,21 @@ ESCALATION CRITERIA (requires_escalation=true):
     def reset(self, seed=None, episode_id=None, task="classify", **kwargs) -> TicketObservation:
         """Reset environment for new episode: pick ticket, set task, initialize state.
 
+        NOTE: Labels are NOT passed in observations (prevents memorization via seeding).
+        Ground truth is stored separately and only accessible to graders.
+
         Args:
-            seed: Reproducible ticket selector (seed % len(TICKETS) = ticket index). If None, picks randomly.
+            seed: Random seed for reproducibility (NOT used to index tickets directly!)
             episode_id: Episode identifier (generated if not provided)
             task: "classify", "route", or "resolve"
             
         Returns:
-            Initial observation with done=False, reward=None
+            Initial observation with done=False, reward=None (no ground truth exposed)
         """
-        # Step 1: Pick a reproducible ticket based on seed
-        # Using modulo arithmetic: seed % len(TICKETS) ensures any seed works correctly
-        # If seed is None, pick randomly without affecting global state
-        if seed is not None:
-            ticket_index = seed % len(TICKETS)
-            self._ticket = TICKETS[ticket_index]
-        else:
-            # Use a local Random instance to avoid touching global state
-            rng = random.Random()
-            self._ticket = rng.choice(TICKETS)
+        # Step 1: Pick a ticket using seed as RNG seed (not direct index)
+        # This prevents agents from memorizing: "seed=5 → category=billing"
+        rng = random.Random(seed) if seed is not None else random.Random()
+        self._ticket = rng.choice(TICKET_DATA)
         
         self._task = task
         
@@ -320,12 +317,9 @@ ESCALATION CRITERIA (requires_escalation=true):
         if self._ticket is None:
             raise RuntimeError("reset() must be called before step()")
         
-        # Build policy excerpt: routing policy + category-specific policy for resolve task
+        # Build policy excerpt: routing policy only (do NOT expose category-specific policy yet!)
+        # This prevents implicit hints about the ticket category
         policy_excerpt = self.ROUTING_POLICY
-        if task == "resolve":
-            category_policy = self.POLICY_EXCERPTS.get(self._ticket["category"], "")
-            if category_policy:
-                policy_excerpt += "\n\n" + category_policy
         
         return TicketObservation(
             ticket_id=self._ticket["id"],
@@ -382,12 +376,10 @@ ESCALATION CRITERIA (requires_escalation=true):
         done = self._compute_done(raw_score)
         
         # Return final observation: single-turn always done after one step
-        # Build policy excerpt: routing policy + category-specific policy
+        # NOTE: Do NOT include category-specific policy excerpt!
+        # Category-specific hints would allow agents to infer the ground truth category from the policy alone.
+        # This protects against label leakage.
         policy_excerpt = self.ROUTING_POLICY
-        if self._task == "resolve":
-            category_policy = self.POLICY_EXCERPTS.get(self._ticket["category"], "")
-            if category_policy:
-                policy_excerpt += "\n\n" + category_policy
         
         observation = TicketObservation(
             ticket_id=self._ticket["id"],
@@ -400,10 +392,7 @@ ESCALATION CRITERIA (requires_escalation=true):
             task_description=self.TASK_DESCRIPTIONS[self._task],
             action_schema=self.ACTION_SCHEMAS[self._task],
             policy_excerpt=policy_excerpt,
-            feedback=(
-                f"{feedback} | step={self._state.step_count}/{self._state.max_steps} "
-                f"| best_score={self._state.best_score:.2f} | cumulative_reward={self._state.cumulative_reward:.2f}"
-            ),
+            feedback=feedback,
             previous_tickets=self._ticket.get("previous_tickets", 0),
             done=done,
             reward=reward,
@@ -521,12 +510,14 @@ ESCALATION CRITERIA (requires_escalation=true):
             "response": response,
         }
         
-        # Ground truth from dataset
+        # CRITICAL FIX: Get ground truth from labels (NOT from observation!)
+        # This prevents label leakage - agents cannot infer labels from seeds
+        labels = get_ticket_labels(ticket_id)
         gt_dict = {
-            "category": self._ticket["category"],
-            "priority": self._ticket["priority"],
-            "department": self._ticket["department"],
-            "requires_escalation": self._ticket.get("requires_escalation", False),
+            "category": labels.get("category", "general"),
+            "priority": labels.get("priority", "medium"),
+            "department": labels.get("department", "tier1"),
+            "requires_escalation": labels.get("requires_escalation", False),
         }
         
         # Ticket metadata
@@ -772,10 +763,13 @@ ESCALATION CRITERIA (requires_escalation=true):
             base_feedback = " | ".join(feedback_parts) if feedback_parts else f"Score: {score:.2f}"
         else:
             # Fallback to manual feedback building (legacy behavior)
-            gt_category = self._ticket["category"]
-            gt_priority = self._ticket["priority"]
-            gt_department = self._ticket["department"]
-            gt_escalation = self._ticket.get("requires_escalation", False)
+            # CRITICAL: Use get_ticket_labels() NOT self._ticket for ground truth!
+            ticket_id = self._ticket.get("id", "UNKNOWN")
+            labels = get_ticket_labels(ticket_id)
+            gt_category = labels.get("category", "general")
+            gt_priority = labels.get("priority", "medium")
+            gt_department = labels.get("department", "tier1")
+            gt_escalation = labels.get("requires_escalation", False)
             
             pred_category = (action.category or "").strip().lower()
             pred_priority = (action.priority or "").strip().lower()

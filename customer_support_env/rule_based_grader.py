@@ -15,6 +15,7 @@ Do NOT use for:
 import logging
 from typing import Dict, Any
 from pydantic import BaseModel
+from .semantic_evaluator import get_semantic_evaluator
 
 logger = logging.getLogger(__name__)
 
@@ -294,37 +295,80 @@ class RuleBasedGrader:
         ground_truth: Dict[str, Any],
         ticket_metadata: Dict[str, Any] | None = None,
     ) -> DetailedScoreBreakdown:
-        """Grade a resolve action with detailed response quality analysis."""
+        """Grade a resolve action with detailed response quality analysis.
+        
+        IMPROVED: Uses semantic evaluation as primary method for response quality.
+        Falls back to keyword-based evaluation if semantic is unavailable.
+        """
         ticket_metadata = ticket_metadata or {}
         
         # Grade core components first (reuse route grading for those)
         route_breakdown = self.grade_route(predicted, ground_truth, ticket_metadata)
         
-        # Response quality
+        # Response quality - PRIORITIZE SEMANTIC EVALUATION
         response = (predicted.get("response") or "").strip()
-        gt_keywords = ground_truth.get("response_keywords", [])
+        gt_keywords = ticket_metadata.get("response_keywords", [])
         
         if not response or len(response) < 20:
             response_score = _strict_unit_score(0.1)
             keyword_reasoning = "Response too short or missing"
             keywords_found = 0
         else:
-            # Keyword coverage
-            response_lower = response.lower()
-            keywords_found = sum(1 for kw in gt_keywords if kw.lower() in response_lower)
-            keyword_coverage = keywords_found / max(1, len(gt_keywords))
+            # PRIMARY: Try semantic evaluation (measures actual quality, not just keyword presence)
+            evaluator = get_semantic_evaluator()
+            empathy_bonus = 0.0
             
-            # Response quality heuristics
-            has_action_phrases = any(phrase in response_lower for phrase in ["will", "process", "send", "provide"])
-            has_empathy = any(word in response_lower for word in ["understand", "sorry", "appreciate", "thank"])
+            if evaluator and evaluator.enabled:
+                # Use semantic evaluation - more robust against keyword gaming
+                logger.info("Using semantic evaluation for response quality")
+                
+                # Build ideal responses based on ticket metadata
+                ticket_sentiment = ticket_metadata.get("sentiment", "neutral")
+                ticket_category = ground_truth.get("category", "general")
+                
+                # Generic ideal response templates (basic - could be expanded)
+                ideal_responses = [
+                    "Thank you for contacting us. We understand your concern and will investigate this immediately.",
+                    "We appreciate you bringing this to our attention. We will process this right away.",
+                    "Thank you for your patience. We are working on resolving your issue and will follow up shortly.",
+                ]
+                
+                # Evaluate semantic similarity
+                eval_result = evaluator.evaluate_response(
+                    response=response,
+                    ideal_responses=ideal_responses,
+                    required_keywords=gt_keywords if gt_keywords else None,
+                )
+                
+                response_score = _strict_unit_score(eval_result.get("combined_score", 0.5))
+                keyword_reasoning = eval_result.get("reasoning", "Semantic evaluation")
+                keywords_found = int(eval_result.get("keyword_coverage", 0) * len(gt_keywords)) if gt_keywords else 0
+                
+                # Empathy bonus for frustrated customers (semantic-aware)
+                has_empathy = any(word in response.lower() for word in ["sorry", "understand", "apologize", "appreciate"])
+                if has_empathy and ticket_sentiment in ["frustrated", "angry"]:
+                    response_score = _strict_unit_score(min(0.99, response_score + 0.1))
+                    empathy_bonus = 0.1
             
-            base_response_score = _strict_unit_score(0.3 + keyword_coverage * 0.6 + (0.1 if has_action_phrases else 0))
-            
-            # Empathy bonus for frustrated customers
-            empathy_bonus = 0.1 if has_empathy and ticket_metadata.get("sentiment") == "frustrated" else 0.0
-            response_score = _strict_unit_score(base_response_score + empathy_bonus)
-            
-            keyword_reasoning = f"Found {keywords_found}/{len(gt_keywords)} required keywords ({keyword_coverage:.0%} coverage)"
+            else:
+                # FALLBACK: Keyword-based evaluation (if semantic unavailable)
+                logger.warning("Semantic evaluator not available, falling back to keyword-based evaluation")
+                
+                response_lower = response.lower()
+                keywords_found = sum(1 for kw in gt_keywords if kw.lower() in response_lower)
+                keyword_coverage = keywords_found / max(1, len(gt_keywords))
+                
+                # Response quality heuristics
+                has_action_phrases = any(phrase in response_lower for phrase in ["will", "process", "send", "provide"])
+                has_empathy = any(word in response_lower for word in ["understand", "sorry", "appreciate", "thank"])
+                
+                base_response_score = _strict_unit_score(0.3 + keyword_coverage * 0.6 + (0.1 if has_action_phrases else 0))
+                
+                # Empathy bonus for frustrated customers
+                empathy_bonus = 0.1 if has_empathy and ticket_metadata.get("sentiment") == "frustrated" else 0.0
+                response_score = _strict_unit_score(base_response_score + empathy_bonus)
+                
+                keyword_reasoning = f"Found {keywords_found}/{len(gt_keywords)} required keywords ({keyword_coverage:.0%} coverage)"
         
         # Weights for resolve task are heavier on response
         weights = {
@@ -370,7 +414,7 @@ class RuleBasedGrader:
             ),
             enterprise_penalty=route_breakdown.enterprise_penalty,
             sla_penalty=route_breakdown.sla_penalty,
-            empathy_bonus=empathy_bonus,  # Use locally-computed empathy_bonus, not route_breakdown
+            empathy_bonus=empathy_bonus,
             weighted_score=weighted_score,
             task_type="resolve",
             what_went_right=what_went_right,

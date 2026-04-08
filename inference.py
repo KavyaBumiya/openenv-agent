@@ -213,14 +213,14 @@ class EnvClient:
 SYSTEM_PROMPTS = {
     "classify": textwrap.dedent("""\
         You are a customer-support triage specialist.
-        Read the ticket and respond with ONLY a JSON object — no markdown, no explanation.
+        OUTPUT ONLY VALID JSON — no markdown code fences, no explanation, no extra text before or after.
         Format:
         {"category": "billing|technical|account|shipping|general",
          "priority": "low|medium|high|urgent"}"""),
 
     "route": textwrap.dedent("""\
         You are a customer-support routing specialist.
-        Read the ticket and respond with ONLY a JSON object — no markdown, no explanation.
+        OUTPUT ONLY VALID JSON — no markdown code fences, no explanation, no extra text before or after.
         Format:
         {"category": "billing|technical|account|shipping|general",
          "priority": "low|medium|high|urgent",
@@ -229,7 +229,7 @@ SYSTEM_PROMPTS = {
 
     "resolve": textwrap.dedent("""\
         You are a customer-support representative.
-        Read the ticket and respond with ONLY a JSON object — no markdown, no explanation.
+        OUTPUT ONLY VALID JSON — no markdown code fences, no explanation, no extra text before or after.
         The "response" field must be a professional reply to the customer.
         Format:
         {"category": "billing|technical|account|shipping|general",

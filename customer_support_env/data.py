@@ -670,6 +670,50 @@ TICKETS: list[dict] = [
     },
 ]
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PREVENT LABEL LEAKAGE: Separate observable data from ground truth labels
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _extract_observable_data(ticket: dict) -> dict:
+    """Extract only observable fields (no ground truth labels)."""
+    return {
+        "id": ticket["id"],
+        "subject": ticket["subject"],
+        "body": ticket["body"],
+        "tier": ticket["tier"],
+        "previous_tickets": ticket["previous_tickets"],
+        "open_since_hours": ticket["open_since_hours"],
+        "sentiment": ticket["sentiment"],
+        "response_keywords": ticket["response_keywords"],
+    }
+
+
+def _extract_labels(ticket: dict) -> dict:
+    """Extract only ground truth labels (hidden from agent)."""
+    return {
+        "ticket_id": ticket["id"],
+        "category": ticket["category"],
+        "priority": ticket["priority"],
+        "department": ticket["department"],
+        "requires_escalation": ticket["requires_escalation"],
+    }
+
+
+# Observable ticket data (what agents see)
+TICKET_DATA: list[dict] = [_extract_observable_data(t) for t in TICKETS]
+
+# Ground truth labels (only graders see this)
+TICKET_LABELS: dict[str, dict] = {
+    t["ticket_id"]: t for t in [_extract_labels(t) for t in TICKETS]
+}
+
+
+def get_ticket_labels(ticket_id: str) -> dict:
+    """Look up ground truth labels by ticket_id (grader access only)."""
+    return TICKET_LABELS.get(ticket_id, {})
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Validate at import time (raises RuntimeError on bad data, logged not printed)
 # ─────────────────────────────────────────────────────────────────────────────
