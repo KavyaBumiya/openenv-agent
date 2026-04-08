@@ -11,9 +11,6 @@ from .openenv_compat import Environment
 from .models import StepInfo, TicketAction, TicketObservation, TicketReward, TicketState
 from .data import TICKET_DATA, get_ticket_labels
 from .rule_based_grader import RuleBasedGrader, DetailedScoreBreakdown
-from .reward_config import RewardConfig
-from .curriculum_manager import CurriculumManager
-from .semantic_evaluator import get_semantic_evaluator
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -228,11 +225,8 @@ ESCALATION CRITERIA (requires_escalation=true):
                     f"Weights: {weights}"
                 )
         
-        # Initialize new AI training components
+        # Initialize grader
         self._grader = RuleBasedGrader()
-        self._reward_config = RewardConfig.preset_medium()  # Default: medium difficulty
-        self._curriculum = CurriculumManager()
-        self._evaluator = get_semantic_evaluator()
         
         self._state: TicketState = TicketState()
         self._ticket: Dict[str, Any] | None = None
