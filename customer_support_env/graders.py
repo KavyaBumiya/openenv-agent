@@ -11,6 +11,7 @@ OpenAI Integration:
 
 import logging
 from .openai_integration import get_openai_integration
+from .rule_based_grader import RuleBasedGrader
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,10 @@ class ClassifyGrader:
                 "score": float (strictly in (0, 1))
             }
         """
+        score = 0.5
+        category_correct = False
+        priority_correct = False
+        
         try:
             # Try AI-powered evaluation first
             openai = get_openai_integration()
@@ -72,7 +77,38 @@ class ClassifyGrader:
                 logger.debug(f"ClassifyGrader: AI score={score}, reasoning={ai_result.get('reasoning', '')}")
             else:
                 # Fallback to rule-based scoring
-                score = _validate_strict_score(0.5, "classify_score")
+                grader = RuleBasedGrader()
+                
+                # Parse action: expected format is "category|priority" or from TicketAction
+                pred_category = "general"
+                pred_priority = "medium"
+                
+                if hasattr(action, 'category'):
+                    pred_category = (action.category or "general").lower()
+                    pred_priority = (action.priority or "medium").lower()
+                elif isinstance(action, str) and "|" in action:
+                    parts = action.split("|")
+                    pred_category = parts[0].strip().lower() if len(parts) > 0 else "general"
+                    pred_priority = parts[1].strip().lower() if len(parts) > 1 else "medium"
+                
+                # Get observation metadata
+                gt_category = getattr(observation, 'category', 'general').lower()
+                gt_priority = getattr(observation, 'priority', 'medium').lower()
+                customer_tier = getattr(observation, 'sender_tier', 'free').lower()
+                
+                # Use rule-based grader
+                breakdown = grader.grade_classify(
+                    predicted_category=pred_category,
+                    predicted_priority=pred_priority,
+                    ground_truth_category=gt_category,
+                    ground_truth_priority=gt_priority,
+                    customer_tier=customer_tier,
+                )
+                
+                score = _validate_strict_score(breakdown.weighted_score, "classify_score")
+                category_correct = breakdown.category_score.value >= 0.9
+                priority_correct = breakdown.priority_score.value >= 0.9
+                logger.debug(f"ClassifyGrader: Rule-based score={score}, category={category_correct}, priority={priority_correct}")
             
             # Defensive: triple-check score is valid before returning
             if not (0 < score < 1):
@@ -87,8 +123,8 @@ class ClassifyGrader:
         
         return {
             "score": score,
-            "category_correct": True,
-            "priority_correct": True
+            "category_correct": "yes" if category_correct else "no",
+            "priority_correct": "yes" if priority_correct else "no"
         }
 
 
@@ -112,6 +148,12 @@ class RouteGrader:
                 "score": float (strictly in (0, 1))
             }
         """
+        score = 0.5
+        category_correct = False
+        priority_correct = False
+        department_correct = False
+        escalation_correct = False
+        
         try:
             # Try AI-powered evaluation first
             openai = get_openai_integration()
@@ -123,7 +165,58 @@ class RouteGrader:
                 logger.debug(f"RouteGrader: AI priority={ai_result.get('priority')}, score={score}")
             else:
                 # Fallback to rule-based scoring
-                score = _validate_strict_score(0.5, "route_score")
+                grader = RuleBasedGrader()
+                
+                # Parse action: could be from TicketAction or string format
+                pred_category = "general"
+                pred_priority = "medium"
+                pred_department = "tier1"
+                pred_escalation = False
+                
+                if hasattr(action, 'category'):
+                    pred_category = (action.category or "general").lower()
+                    pred_priority = (action.priority or "medium").lower()
+                    pred_department = (action.department or "tier1").lower()
+                    pred_escalation = action.requires_escalation or False
+                
+                # Get observation metadata
+                gt_category = getattr(observation, 'category', 'general').lower()
+                gt_priority = getattr(observation, 'priority', 'medium').lower()
+                gt_department = getattr(observation, 'department', 'tier1').lower()
+                gt_escalation = getattr(observation, 'requires_escalation', False)
+                customer_tier = getattr(observation, 'sender_tier', 'free').lower()
+                
+                # Prepare metadata
+                metadata = {
+                    "tier": customer_tier,
+                    "open_since_hours": getattr(observation, 'open_since_hours', 0),
+                    "sentiment": getattr(observation, 'sentiment', 'neutral'),
+                    "response_keywords": getattr(observation, 'response_keywords', []),
+                }
+                
+                # Use rule-based grader
+                breakdown = grader.grade_route(
+                    predicted={
+                        "category": pred_category,
+                        "priority": pred_priority,
+                        "department": pred_department,
+                        "requires_escalation": pred_escalation,
+                    },
+                    ground_truth={
+                        "category": gt_category,
+                        "priority": gt_priority,
+                        "department": gt_department,
+                        "requires_escalation": gt_escalation,
+                    },
+                    ticket_metadata=metadata,
+                )
+                
+                score = _validate_strict_score(breakdown.weighted_score, "route_score")
+                category_correct = breakdown.category_score.value >= 0.9
+                priority_correct = breakdown.priority_score.value >= 0.9
+                department_correct = breakdown.department_score and breakdown.department_score.value >= 0.9
+                escalation_correct = breakdown.escalation_score and breakdown.escalation_score.value >= 0.9
+                logger.debug(f"RouteGrader: Rule-based score={score}")
             
             # Defensive: triple-check score is valid before returning
             if not (0 < score < 1):
@@ -138,10 +231,10 @@ class RouteGrader:
         
         return {
             "score": score,
-            "category_correct": True,
-            "priority_correct": True,
-            "department_correct": True,
-            "escalation_correct": True
+            "category_correct": "yes" if category_correct else "no",
+            "priority_correct": "yes" if priority_correct else "no",
+            "department_correct": "yes" if department_correct else "no",
+            "escalation_correct": "yes" if escalation_correct else "no"
         }
 
 
@@ -166,6 +259,13 @@ class ResolveGrader:
                 "score": float (strictly in (0, 1))
             }
         """
+        score = 0.5
+        response_quality = 0.5
+        category_correct = False
+        priority_correct = False
+        department_correct = False
+        escalation_correct = False
+        
         try:
             # Try AI-powered response evaluation first
             openai = get_openai_integration()
@@ -178,9 +278,64 @@ class ResolveGrader:
                 )
                 response_quality = _validate_strict_score(ai_eval.get('score', 0.5), "response_quality")
                 logger.debug(f"ResolveGrader: AI response quality={response_quality}, reasoning={ai_eval.get('reasoning', '')}")
-            
-            # Overall score combines correctness with response quality
-            score = _validate_strict_score((response_quality + 0.5) / 2, "resolve_score")
+            else:
+                # Fallback to rule-based scoring
+                grader = RuleBasedGrader()
+                
+                # Parse action: could be from TicketAction or string format
+                pred_category = "general"
+                pred_priority = "medium"
+                pred_department = "tier1"
+                pred_escalation = False
+                pred_response = ""
+                
+                if hasattr(action, 'category'):
+                    pred_category = (action.category or "general").lower()
+                    pred_priority = (action.priority or "medium").lower()
+                    pred_department = (action.department or "tier1").lower()
+                    pred_escalation = action.requires_escalation or False
+                    pred_response = (action.response or "").strip()
+                
+                # Get observation metadata
+                gt_category = getattr(observation, 'category', 'general').lower()
+                gt_priority = getattr(observation, 'priority', 'medium').lower()
+                gt_department = getattr(observation, 'department', 'tier1').lower()
+                gt_escalation = getattr(observation, 'requires_escalation', False)
+                customer_tier = getattr(observation, 'sender_tier', 'free').lower()
+                
+                # Prepare metadata
+                metadata = {
+                    "tier": customer_tier,
+                    "open_since_hours": getattr(observation, 'open_since_hours', 0),
+                    "sentiment": getattr(observation, 'sentiment', 'neutral'),
+                    "response_keywords": getattr(observation, 'response_keywords', []),
+                }
+                
+                # Use rule-based grader
+                breakdown = grader.grade_resolve(
+                    predicted={
+                        "category": pred_category,
+                        "priority": pred_priority,
+                        "department": pred_department,
+                        "requires_escalation": pred_escalation,
+                        "response": pred_response,
+                    },
+                    ground_truth={
+                        "category": gt_category,
+                        "priority": gt_priority,
+                        "department": gt_department,
+                        "requires_escalation": gt_escalation,
+                    },
+                    ticket_metadata=metadata,
+                )
+                
+                score = _validate_strict_score(breakdown.weighted_score, "resolve_score")
+                response_quality = _validate_strict_score(breakdown.response_score.value if breakdown.response_score else 0.5, "response_quality")
+                category_correct = breakdown.category_score.value >= 0.9
+                priority_correct = breakdown.priority_score.value >= 0.9
+                department_correct = breakdown.department_score and breakdown.department_score.value >= 0.9
+                escalation_correct = breakdown.escalation_score and breakdown.escalation_score.value >= 0.9
+                logger.debug(f"ResolveGrader: Rule-based score={score}, response_quality={response_quality}")
             
             # Defensive: triple-check scores are valid before returning
             if not (0 < score < 1):
@@ -199,10 +354,11 @@ class ResolveGrader:
         
         return {
             "score": score,
-            "category_correct": True,
-            "priority_correct": True,
-            "department_correct": True,
-            "escalation_correct": True,
+            "category_correct": "yes" if category_correct else "no",
+            "priority_correct": "yes" if priority_correct else "no",
+            "department_correct": "yes" if department_correct else "no",
+            "escalation_correct": "yes" if escalation_correct else "no",
             "response_quality": response_quality
         }
+
 

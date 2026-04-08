@@ -116,7 +116,7 @@ tasks:
 
 reward_config:
   type: shaped
-  range: [0.0, 1.0]
+  range: [0.001, 0.999]
   trajectory:
     progress_signal: best_score_improvement
     penalties:

@@ -178,23 +178,23 @@ class TicketReward(BaseModel):
 
     progress_gain: float = Field(
         ...,
-        ge=0.0,
-        le=1.0,
-        description="Positive improvement compared with best prior score in this episode (can be 0.0 or 1.0).",
+        gt=0.0,
+        lt=1.0,
+        description="Positive improvement compared with best prior score in this episode (strictly in (0, 1)).",
     )
 
     repeated_action_penalty: float = Field(
         ...,
-        ge=0.0,
-        le=1.0,
-        description="Penalty applied when repeating an action signature (can be 0.0 or 1.0).",
+        gt=0.0,
+        lt=1.0,
+        description="Penalty applied when repeating an action signature (strictly in (0, 1)).",
     )
 
     extra_step_penalty: float = Field(
         ...,
-        ge=0.0,
-        le=1.0,
-        description="Penalty applied for additional steps beyond the first (can be 0.0 or 1.0).",
+        gt=0.0,
+        lt=1.0,
+        description="Penalty applied for additional steps beyond the first (strictly in (0, 1)).",
     )
 
 
@@ -203,7 +203,7 @@ class StepInfo(BaseModel):
 
     step_count: int = Field(..., ge=1)
     max_steps: int = Field(..., ge=1)
-    best_score: float = Field(..., ge=0.0, le=1.0)
+    best_score: float = Field(..., gt=0.0, lt=1.0)
     cumulative_reward: float = Field(..., ge=0.0)
 
 
