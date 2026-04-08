@@ -35,5 +35,5 @@ EXPOSE 7860
 # Note: Disabled aggressive healthcheck due to HF Spaces scheduling issues
 # If needed, can be enabled with: HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 CMD curl -f http://localhost:7860/health || exit 1
 
-# Start FastAPI application through Python wrapper with comprehensive error handling
-CMD ["python", "server/app.py"]
+# Start FastAPI application with uvicorn
+CMD ["uvicorn", "customer_support_env.server.app:app", "--host", "0.0.0.0", "--port", "7860"]

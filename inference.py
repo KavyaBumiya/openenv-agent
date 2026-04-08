@@ -141,7 +141,9 @@ def _episode_score(rewards: List[float]) -> float:
     """Return a normalized per-episode score in [0, 1]."""
     if not rewards:
         return STRICT_SCORE_EPSILON
-    return round(min(1.0 - STRICT_SCORE_EPSILON, max(STRICT_SCORE_EPSILON, sum(rewards))), 4)
+    # Use mean instead of sum: multi-step episodes should average rewards, not accumulate
+    mean_reward = sum(rewards) / len(rewards)
+    return round(min(1.0 - STRICT_SCORE_EPSILON, max(STRICT_SCORE_EPSILON, mean_reward)), 4)
 
 
 def _strict_summary_score(value: float) -> float:

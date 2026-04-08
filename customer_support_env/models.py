@@ -203,7 +203,7 @@ class StepInfo(BaseModel):
 
     step_count: int = Field(..., ge=1)
     max_steps: int = Field(..., ge=1)
-    best_score: float = Field(..., gt=0.0, lt=1.0)
+    best_score: float = Field(..., ge=0.0, le=1.0)
     cumulative_reward: float = Field(..., ge=0.0)
 
 

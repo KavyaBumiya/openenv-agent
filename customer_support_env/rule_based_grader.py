@@ -308,6 +308,7 @@ class RuleBasedGrader:
         # Response quality - PRIORITIZE SEMANTIC EVALUATION
         response = (predicted.get("response") or "").strip()
         gt_keywords = ticket_metadata.get("response_keywords", [])
+        empathy_bonus = 0.0  # Initialize before conditional branches to prevent NameError
         
         if not response or len(response) < 20:
             response_score = _strict_unit_score(0.1)
@@ -316,7 +317,6 @@ class RuleBasedGrader:
         else:
             # PRIMARY: Try semantic evaluation (measures actual quality, not just keyword presence)
             evaluator = get_semantic_evaluator()
-            empathy_bonus = 0.0
             
             if evaluator and evaluator.enabled:
                 # Use semantic evaluation - more robust against keyword gaming
