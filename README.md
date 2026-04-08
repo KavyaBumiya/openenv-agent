@@ -219,11 +219,13 @@ python inference.py
 The baseline script emits strict structured stdout lines required by evaluators:
 ```
 [START] task=classify env=customer_support_env model=meta-llama/Llama-3.1-8B-Instruct
-[STEP] step=1 action={"category":"billing","priority":"high","department":null,"requires_escalation":false,"response":null} reward=1.00 done=true error=null
-[END] success=true steps=1 rewards=1.00
+[STEP] step=1 action={"category":"billing","priority":"high","department":null,"requires_escalation":false,"response":null} reward=1.0000 done=true error=null
+[END] success=true steps=1 score=1.000 rewards=1.0000
 
 [START] task=route env=customer_support_env model=meta-llama/Llama-3.1-8B-Instruct
-...
+[STEP] step=1 action={...} reward=0.5600 done=false error=null
+[STEP] step=2 action={...} reward=0.6800 done=true error=null
+[END] success=true steps=2 score=0.623 rewards=0.5600,0.6800
 ```
 
 No additional line types are printed to stdout.

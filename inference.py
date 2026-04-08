@@ -85,9 +85,9 @@ def log_step(step: int, action: str, reward: float,
     )
 
 
-def log_end(success: bool, steps: int, rewards: List[float]) -> None:
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.4f}" for r in rewards)
-    print(f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}", flush=True)
+    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
 
 
 def _sanitize_single_line(value: Optional[str]) -> str:
@@ -398,6 +398,7 @@ def run_episode(task: str, seed: int) -> tuple[bool, float]:
     except Exception:
         # Keep stdout strict: no extra line types besides START/STEP/END.
         success = False
+        score = 0.0
     finally:
         try:
             env.close()
@@ -405,9 +406,11 @@ def run_episode(task: str, seed: int) -> tuple[bool, float]:
             print(f"[WARN] env.close failed: {_sanitize_single_line(str(exc))}", file=os.sys.stderr, flush=True)
         final_rewards = rewards or [0.0]
         final_steps = steps or 0
+        final_score = score if 'score' in locals() else 0.0
         log_end(
             success=success,
             steps=final_steps,
+            score=final_score,
             rewards=final_rewards,
         )
 
