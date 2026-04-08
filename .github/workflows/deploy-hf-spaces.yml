@@ -35,8 +35,10 @@ jobs:
           echo "✓ HF_TOKEN is configured"
 
       - name: Check OPENAI API key
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
+          if [ -z "${OPENAI_API_KEY}" ]; then
             echo "⚠️  OPENAI_API_KEY secret not set (optional for local testing)"
             echo "   Validators will inject their own key during submission review"
             echo "   To test locally: set OPENAI_API_KEY in GitHub Secrets"
@@ -82,7 +84,7 @@ jobs:
           PY
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || '' }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           REPO_ID: ${{ env.REPO_ID }}
           REPO_TYPE: ${{ env.REPO_TYPE }}
           GIT_AUTHOR_NAME: github-actions
