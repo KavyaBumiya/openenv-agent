@@ -23,6 +23,51 @@ logger = logging.getLogger(__name__)
 _STRICT_SCORE_EPSILON = 0.001
 
 
+def _term_variants(term: str) -> set[str]:
+    """Generate normalized variants of a term for keyword matching.
+    
+    Handles English inflections including silent-e rule:
+    - resolve + ed → resolved (drop silent-e)
+    - route + ing → routing (drop silent-e)
+    - help + ed → helped (simple addition)
+    """
+    normalized = term.lower().strip()
+    variants = {normalized}
+    
+    # First pass: try stripping each suffix to find base forms
+    for suffix in ("ed", "ing", "s", "tion"):
+        if len(normalized) > len(suffix) + 2 and normalized.endswith(suffix):
+            base = normalized[: -len(suffix)]
+            variants.add(base)
+            # For the base form, also try adding other suffixes
+            for other_suffix in ("ed", "ing", "s"):
+                if other_suffix != suffix and len(base + other_suffix) < 30:
+                    variants.add(base + other_suffix)
+    
+    # Second pass: for the original word, if it's already a base form (no suffix),
+    # also add common inflections (handling silent-e rule)
+    is_base = not any(
+        normalized.endswith(suf) and len(normalized) > len(suf) + 2
+        for suf in ("ed", "ing", "s", "tion")
+    )
+    
+    if is_base:
+        # For "ing": drop trailing 'e' before adding 'ing'
+        if normalized.endswith("e") and len(normalized) > 3:
+            variants.add(normalized[:-1] + "ing")  # resolve → resolving
+        variants.add(normalized + "ing")  # help → helping
+        
+        # For "ed": drop trailing 'e' before adding 'ed'
+        if normalized.endswith("e") and len(normalized) > 3:
+            variants.add(normalized[:-1] + "ed")  # resolve → resolved
+        variants.add(normalized + "ed")  # help → helped
+        
+        # For "s": just add it (usually works)
+        variants.add(normalized + "s")  # help → helps
+    
+    return {v for v in variants if v and len(v) > 2}
+
+
 def _strict_unit_score(value: float) -> float:
     """Clamp a score to the open interval (0, 1) — never exactly 0.0 or 1.0.
     
@@ -355,7 +400,17 @@ class RuleBasedGrader:
                 logger.warning("Semantic evaluator not available, falling back to keyword-based evaluation")
                 
                 response_lower = response.lower()
-                keywords_found = sum(1 for kw in gt_keywords if kw.lower() in response_lower)
+                # Use morphological term variants for better keyword matching
+                response_terms = {
+                    variant
+                    for token in response_lower.split()
+                    for variant in _term_variants(token)
+                }
+                
+                def _kw_match(kw: str) -> bool:
+                    return bool(_term_variants(kw) & response_terms)
+                
+                keywords_found = sum(1 for kw in gt_keywords if _kw_match(kw))
                 keyword_coverage = keywords_found / max(1, len(gt_keywords))
                 
                 # Response quality heuristics

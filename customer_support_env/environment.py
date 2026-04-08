@@ -74,49 +74,6 @@ def _validate_strict_score(score: float, label: str = "score") -> float:
     return clamped
 
 
-def _term_variants(term: str) -> set[str]:
-    """Generate normalized variants of a term for keyword matching.
-    
-    Handles English inflections including silent-e rule:
-    - resolve + ed → resolved (drop silent(e)
-    - route + ing → routing (drop silent-e)
-    - help + ed → helped (simple addition)
-    """
-    normalized = term.lower().strip()
-    variants = {normalized}
-    
-    # First pass: try stripping each suffix to find base forms
-    for suffix in ("ed", "ing", "s", "tion"):
-        if len(normalized) > len(suffix) + 2 and normalized.endswith(suffix):
-            base = normalized[: -len(suffix)]
-            variants.add(base)
-            # For the base form, also try adding other suffixes
-            for other_suffix in ("ed", "ing", "s"):
-                if other_suffix != suffix and len(base + other_suffix) < 30:
-                    variants.add(base + other_suffix)
-    
-    # Second pass: for the original word, if it's already a base form (no suffix),
-    # also add common inflections (handling silent-e rule)
-    is_base = not any(
-        normalized.endswith(suf) and len(normalized) > len(suf) + 2
-        for suf in ("ed", "ing", "s", "tion")
-    )
-    
-    if is_base:
-        # For "ing": drop trailing 'e' before adding 'ing'
-        if normalized.endswith("e") and len(normalized) > 3:
-            variants.add(normalized[:-1] + "ing")  # resolve → resolving
-        variants.add(normalized + "ing")  # help → helping
-        
-        # For "ed": drop trailing 'e' before adding 'ed'
-        if normalized.endswith("e") and len(normalized) > 3:
-            variants.add(normalized[:-1] + "ed")  # resolve → resolved
-        variants.add(normalized + "ed")  # help → helped
-        
-        # For "s": just add it (usually works)
-        variants.add(normalized + "s")  # help → helps
-    
-    return {v for v in variants if v and len(v) > 2}
 
 
 class CustomerSupportEnvironment(Environment[TicketAction, TicketObservation, TicketState]):
