@@ -2,12 +2,37 @@
 
 import asyncio
 import json
-from typing import Optional
+from typing import Optional, TypeVar, Generic
 import websockets
 
-from ..openenv_compat import EnvClient, StepResult
-
 from ..models import TicketAction, TicketObservation, TicketState
+
+# Define generic base class for environment clients
+ActionType = TypeVar('ActionType')
+ObservationType = TypeVar('ObservationType')
+StateType = TypeVar('StateType')
+
+
+class EnvClient(Generic[ActionType, ObservationType, StateType]):
+    """Base class for environment clients (WebSocket, HTTP, etc.)."""
+    
+    def _step_payload(self, action: ActionType) -> dict:
+        """Convert action to JSON-serializable dict."""
+        raise NotImplementedError
+    
+    def _observation_from_payload(self, payload: dict) -> ObservationType:
+        """Convert JSON payload to observation."""
+        raise NotImplementedError
+
+
+class StepResult:
+    """Result of stepping through the environment."""
+    
+    def __init__(self, observation, reward: float, done: bool, info: dict = None):
+        self.observation = observation
+        self.reward = reward
+        self.done = done
+        self.info = info or {}
 
 
 class CustomerSupportClient(EnvClient[TicketAction, TicketObservation, TicketState]):

@@ -7,10 +7,14 @@ No duplicate grading logic - imports from rule_based_grader.py only.
 """
 
 import logging
+import os
 from typing import Optional
 from .rule_based_grader import RuleBasedGrader
 from .data import get_ticket_labels
 from .models import TicketAction, TicketObservation
+
+# In validation/testing, propagate exceptions for visibility; in production, use graceful fallback
+_RAISE_ON_GRADER_ERROR = os.getenv("RAISE_ON_GRADER_ERROR", "false").lower() == "true"
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +72,10 @@ class ClassifyGrader:
             labels = get_ticket_labels(ticket_id)
             
             if not labels:
-                logger.error(f"ClassifyGrader: No labels found for ticket {ticket_id}")
+                error_msg = f"ClassifyGrader: No labels found for ticket {ticket_id}"
+                logger.error(f"❌ {error_msg}")
+                if _RAISE_ON_GRADER_ERROR:
+                    raise ValueError(error_msg)
                 return {"score": 0.5, "category_correct": "no", "priority_correct": "no"}
             
             # Use RuleBasedGrader (single source of truth)
@@ -95,7 +102,10 @@ class ClassifyGrader:
             }
         
         except Exception as e:
-            logger.exception(f"ClassifyGrader error: {e}")
+            logger.exception(f"❌ ClassifyGrader error: {e}")
+            if _RAISE_ON_GRADER_ERROR:
+                raise
+            # Graceful fallback for production (but visible error logging for debugging)
             return {"score": 0.5, "category_correct": "no", "priority_correct": "no"}
 
 
@@ -129,7 +139,10 @@ class RouteGrader:
             labels = get_ticket_labels(ticket_id)
             
             if not labels:
-                logger.error(f"RouteGrader: No labels found for ticket {ticket_id}")
+                error_msg = f"RouteGrader: No labels found for ticket {ticket_id}"
+                logger.error(f"❌ {error_msg}")
+                if _RAISE_ON_GRADER_ERROR:
+                    raise ValueError(error_msg)
                 return {
                     "score": 0.5,
                     "category_correct": "no",
@@ -186,7 +199,10 @@ class RouteGrader:
             }
         
         except Exception as e:
-            logger.exception(f"RouteGrader error: {e}")
+            logger.exception(f"❌ RouteGrader error: {e}")
+            if _RAISE_ON_GRADER_ERROR:
+                raise
+            # Graceful fallback for production (but visible error logging for debugging)
             return {
                 "score": 0.5,
                 "category_correct": "no",
@@ -227,7 +243,10 @@ class ResolveGrader:
             labels = get_ticket_labels(ticket_id)
             
             if not labels:
-                logger.error(f"ResolveGrader: No labels found for ticket {ticket_id}")
+                error_msg = f"ResolveGrader: No labels found for ticket {ticket_id}"
+                logger.error(f"❌ {error_msg}")
+                if _RAISE_ON_GRADER_ERROR:
+                    raise ValueError(error_msg)
                 return {
                     "score": 0.5,
                     "category_correct": "no",
@@ -291,7 +310,10 @@ class ResolveGrader:
             }
         
         except Exception as e:
-            logger.exception(f"ResolveGrader error: {e}")
+            logger.exception(f"❌ ResolveGrader error: {e}")
+            if _RAISE_ON_GRADER_ERROR:
+                raise
+            # Graceful fallback for production (but visible error logging for debugging)
             return {
                 "score": 0.5,
                 "category_correct": "no",

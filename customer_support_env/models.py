@@ -1,8 +1,25 @@
 """Data models: the contract between agent, environment, and grader."""
 
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional, Literal
-from .openenv_compat import Action, Observation, State
+from pydantic import BaseModel, Field, field_validator, ConfigDict
+from typing import Optional, Literal, Annotated
+
+# Use real openenv base classes (v0.2.0+)
+try:
+    from openenv.core import Action, Observation, State
+except ImportError:
+    try:
+        # Fallback for older openenv-core versions
+        from openenv_core import Action, Observation, State
+    except ImportError:
+        # Fallback for compatibility during development
+        class Action(BaseModel):
+            model_config = ConfigDict(extra='forbid')
+        
+        class Observation(BaseModel):
+            model_config = ConfigDict(extra='forbid')
+        
+        class State(BaseModel):
+            model_config = ConfigDict(extra='forbid')
 
 
 class TicketAction(Action):
@@ -159,42 +176,41 @@ class TicketObservation(Observation):
     )
 
 
+# Strictly bounded float: must be strictly between EPSILON and 1-EPSILON (never at exact boundaries)
+_EPSILON = 0.001
+StrictBoundedFloat = Annotated[float, Field(ge=_EPSILON, le=1.0 - _EPSILON)]
+
+
 class TicketReward(BaseModel):
-    """Typed reward payload for each step."""
+    """Typed reward payload for each step.
+    
+    All float fields are strictly bounded in [0.001, 0.999] to comply with OpenEnv Phase 2 validation.
+    This prevents issues with Pydantic boundary validation and ensures deterministic serialization.
+    """
 
-    value: float = Field(
+    value: StrictBoundedFloat = Field(
         ...,
-        gt=0.0,
-        lt=1.0,
-        description="Final shaped reward value strictly in (0.0, 1.0) for this step.",
+        description="Final shaped reward value strictly in (0.001, 0.999) for this step.",
     )
 
-    raw_score: float = Field(
+    raw_score: StrictBoundedFloat = Field(
         ...,
-        gt=0.0,
-        lt=1.0,
-        description="Task grader score strictly in (0.0, 1.0) before trajectory shaping penalties.",
+        description="Task grader score strictly in (0.001, 0.999) before trajectory shaping penalties.",
     )
 
-    progress_gain: float = Field(
+    progress_gain: StrictBoundedFloat = Field(
         ...,
-        gt=0.0,
-        lt=1.0,
-        description="Positive improvement compared with best prior score in this episode (strictly in (0, 1)).",
+        description="Positive improvement compared with best prior score in this episode (strictly in (0.001, 0.999)).",
     )
 
-    repeated_action_penalty: float = Field(
+    repeated_action_penalty: StrictBoundedFloat = Field(
         ...,
-        gt=0.0,
-        lt=1.0,
-        description="Penalty applied when repeating an action signature (strictly in (0, 1)).",
+        description="Penalty applied when repeating an action signature (strictly in (0.001, 0.999)).",
     )
 
-    extra_step_penalty: float = Field(
+    extra_step_penalty: StrictBoundedFloat = Field(
         ...,
-        gt=0.0,
-        lt=1.0,
-        description="Penalty applied for additional steps beyond the first (strictly in (0, 1)).",
+        description="Penalty applied for additional steps beyond the first (strictly in (0.001, 0.999)).",
     )
 
 

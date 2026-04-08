@@ -6,7 +6,30 @@ import re
 import uuid
 from typing import Dict, Any
 
-from .openenv_compat import Environment
+# Use real openenv base class (v0.2.0+)
+try:
+    from openenv.core import Environment
+except ImportError:
+    try:
+        # Fallback for older openenv-core versions
+        from openenv_core import Environment
+    except ImportError:
+        # Fallback for compatibility during development
+        from abc import ABC
+        from typing import TypeVar, Generic
+        
+        ActionType = TypeVar('ActionType')
+        ObservationType = TypeVar('ObservationType')
+        StateType = TypeVar('StateType')
+        
+        class Environment(ABC, Generic[ActionType, ObservationType, StateType]):
+            """Base class for RL environments."""
+            def state(self) -> StateType:
+                raise NotImplementedError
+            def reset(self) -> ObservationType:
+                raise NotImplementedError
+            def step(self, action: ActionType):
+                raise NotImplementedError
 
 from .models import StepInfo, TicketAction, TicketObservation, TicketReward, TicketState
 from .data import TICKET_DATA, get_ticket_labels
