@@ -475,6 +475,7 @@ ESCALATION CRITERIA (requires_escalation=true):
             "priority": labels.get("priority", "medium"),
             "department": labels.get("department", "tier1"),
             "requires_escalation": labels.get("requires_escalation", False),
+            "response_keywords": self._ticket.get("response_keywords", []),
         }
         
         # Ticket metadata
