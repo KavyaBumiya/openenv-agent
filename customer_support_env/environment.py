@@ -662,7 +662,7 @@ ESCALATION CRITERIA (requires_escalation=true):
             # Agent omitted field - treat as False (no escalation)
             predicted = False
         
-        return _strict_unit_score(1.0 if predicted == actual else 0.0)
+        return _strict_unit_score(0.99 if predicted == actual else 0.01)
     
     def _score_response(self, response_text: str, required_keywords: list, ticket: Dict[str, Any]) -> float:
         """Score response quality by keyword presence with sentiment awareness.
@@ -681,7 +681,7 @@ ESCALATION CRITERIA (requires_escalation=true):
             0.0 if too few keywords
         """
         if not required_keywords:
-            return _strict_unit_score(1.0)  # No keywords required, return full credit
+            return _strict_unit_score(0.99)  # No keywords required, return full credit
         
         response_lower = response_text.lower()
         response_terms = {
@@ -703,26 +703,26 @@ ESCALATION CRITERIA (requires_escalation=true):
         
         # Base score from keyword coverage
         if found_count >= len(required_keywords):
-            base_score = 1.0
+            base_score = 0.95
         elif found_count >= threshold:
             base_score = 0.6
         elif found_count >= 1:
             base_score = 0.2
         else:
             logger.debug(f"Response insufficient keywords: {found_count}/{len(required_keywords)} (threshold={threshold})")
-            return _strict_unit_score(0.0)  # Too few keywords
+            return _strict_unit_score(0.05)  # Too few keywords
 
         # Actionability requirement: concrete next-step phrasing should be present.
         action_phrases = ["we will", "next steps", "please", "within", "today", "hours", "days"]
         has_action_phrase = any(phrase in response_lower for phrase in action_phrases)
         if not has_action_phrase:
-            base_score = max(0.0, base_score - self.RESPONSE_ACTION_PHRASE_PENALTY)
+            base_score = max(0.01, base_score - self.RESPONSE_ACTION_PHRASE_PENALTY)
             logger.debug(f"Response missing action phrase: reducing score by {self.RESPONSE_ACTION_PHRASE_PENALTY}")
 
         # Penalize filler-heavy responses that game keywords without concrete content.
         filler_markers = ["as an ai", "cannot assist", "lorem", "blah", "template"]
         if any(marker in response_lower for marker in filler_markers):
-            base_score = max(0.0, base_score - self.RESPONSE_FILLER_PENALTY)
+            base_score = max(0.01, base_score - self.RESPONSE_FILLER_PENALTY)
             logger.debug(f"Response contains filler: reducing score by {self.RESPONSE_FILLER_PENALTY}")
         
         # Boost score if sentiment-matched
@@ -732,7 +732,7 @@ ESCALATION CRITERIA (requires_escalation=true):
         
         # Frustrated/angry customers → reward empathy
         if sentiment in ["frustrated", "angry", "distressed"] and has_empathy:
-            base_score = min(1.0, base_score + self.SENTIMENT_EMPATHY_BONUS)  # Bonus for emotional intelligence
+            base_score = min(0.99, base_score + self.SENTIMENT_EMPATHY_BONUS)  # Bonus for emotional intelligence
             logger.debug(f"Empathy bonus applied: +{self.SENTIMENT_EMPATHY_BONUS}")
         
         return _strict_unit_score(round(base_score, 2))

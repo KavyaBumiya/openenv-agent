@@ -91,12 +91,12 @@ class RuleBasedGrader:
         """
         # Category scoring
         category_correct = predicted_category.lower() == ground_truth_category.lower()
-        category_score = _strict_unit_score(1.0 if category_correct else 0.3)
+        category_score = _strict_unit_score(0.95 if category_correct else 0.3)
         
         # Priority scoring (graduated scale)
         priority_correct = predicted_priority.lower() == ground_truth_priority.lower()
         if priority_correct:
-            priority_score = _strict_unit_score(1.0)
+            priority_score = _strict_unit_score(0.95)
             priority_reasoning = "Priority classification is exact match"
         else:
             # Check if one step off
@@ -179,7 +179,7 @@ class RuleBasedGrader:
         
         # Component scores
         category_correct = predicted["category"].lower() == ground_truth["category"].lower()
-        category_score = _strict_unit_score(1.0 if category_correct else 0.3)
+        category_score = _strict_unit_score(0.95 if category_correct else 0.3)
         
         # Priority (graduated)
         priority_order = ["low", "medium", "high", "urgent"]
@@ -187,14 +187,14 @@ class RuleBasedGrader:
         try:
             pred_idx = priority_order.index(predicted["priority"].lower())
             gt_idx = priority_order.index(ground_truth["priority"].lower())
-            priority_score = _strict_unit_score(1.0 - abs(pred_idx - gt_idx) * 0.25)
+            priority_score = _strict_unit_score(0.95 - abs(pred_idx - gt_idx) * 0.25)
         except ValueError:
             priority_score = _strict_unit_score(0.1)
         
         # Department (with fallback credit)
         department_correct = predicted["department"].lower() == ground_truth["department"].lower()
         if department_correct:
-            department_score = _strict_unit_score(1.0)
+            department_score = _strict_unit_score(0.95)
             department_reasoning = "Correct department routing"
         else:
             # Check for reasonable fallback
@@ -214,7 +214,7 @@ class RuleBasedGrader:
         
         # Escalation
         escalation_correct = predicted.get("requires_escalation", False) == ground_truth.get("requires_escalation", False)
-        escalation_score = _strict_unit_score(1.0 if escalation_correct else 0.3)
+        escalation_score = _strict_unit_score(0.95 if escalation_correct else 0.3)
         
         # Penalties
         enterprise_penalty = 0.0 if priority_correct else (0.20 if customer_tier == "enterprise" else 0.0)
